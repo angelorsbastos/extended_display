@@ -1,0 +1,30 @@
+# XcodeGen spec: the GitHub Actions build turns this into ExtendDisplay.xcodeproj,
+# so we never have to edit an Xcode project file by hand on Windows.
+name: ExtendDisplay
+options:
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  ExtendDisplay:
+    type: application
+    platform: iOS
+    sources: [ExtendDisplay]
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.extenddisplay.app
+        TARGETED_DEVICE_FAMILY: "2"  # iPad only
+        SWIFT_VERSION: "5.0"
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: ExtendDisplay/Info.plist
+      properties:
+        CFBundleDisplayName: Extend Display
+        UILaunchScreen: {}  # without this iOS shows the app letterboxed
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSLocalNetworkUsageDescription: Receives the PC screen over the USB cable.
