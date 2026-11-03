@@ -81,6 +81,99 @@ def available_modes(name):
     return modes
 
 
+class LUID(ctypes.Structure):
+    _fields_ = [("LowPart", wintypes.DWORD), ("HighPart", wintypes.LONG)]
+
+
+class DISPLAYCONFIG_PATH_INFO(ctypes.Structure):
+    # only the source part is read; the rest is padding up to the real 72-byte size
+    _fields_ = [("sourceAdapterId", LUID), ("sourceId", ctypes.c_uint32),
+                ("sourceModeInfoIdx", ctypes.c_uint32), ("sourceStatusFlags", ctypes.c_uint32),
+                ("rest", ctypes.c_ubyte * 52)]
+
+
+class DISPLAYCONFIG_DEVICE_INFO_HEADER(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_int32), ("size", ctypes.c_uint32),
+                ("adapterId", LUID), ("id", ctypes.c_uint32)]
+
+
+class DISPLAYCONFIG_SOURCE_DEVICE_NAME(ctypes.Structure):
+    _fields_ = [("header", DISPLAYCONFIG_DEVICE_INFO_HEADER),
+                ("viewGdiDeviceName", wintypes.WCHAR * 32)]
+
+
+class DPI_SCALE_GET(ctypes.Structure):
+    _fields_ = [("header", DISPLAYCONFIG_DEVICE_INFO_HEADER), ("minScaleRel", ctypes.c_int32),
+                ("curScaleRel", ctypes.c_int32), ("maxScaleRel", ctypes.c_int32)]
+
+
+class DPI_SCALE_SET(ctypes.Structure):
+    _fields_ = [("header", DISPLAYCONFIG_DEVICE_INFO_HEADER), ("scaleRel", ctypes.c_int32)]
+
+
+QDC_ONLY_ACTIVE_PATHS = 0x2
+GET_SOURCE_NAME = 1
+# Undocumented, but what the Settings app itself uses for the "Scale" dropdown.
+# Scale is set relative to the display's recommended step in this list.
+GET_DPI_SCALE, SET_DPI_SCALE = -3, -4
+SCALE_STEPS = [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500]
+
+
+def _source(name):
+    """The (adapter id, source id) pair Windows' display-config API uses for `name`."""
+    n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
+    user32.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths),
+                                       ctypes.byref(n_modes))
+    paths = (DISPLAYCONFIG_PATH_INFO * n_paths.value)()
+    modes = (ctypes.c_ubyte * (64 * n_modes.value))()  # DISPLAYCONFIG_MODE_INFO is 64 bytes
+    user32.QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), paths,
+                              ctypes.byref(n_modes), modes, None)
+    for path in paths[:n_paths.value]:
+        info = DISPLAYCONFIG_SOURCE_DEVICE_NAME()
+        info.header.type, info.header.size = GET_SOURCE_NAME, ctypes.sizeof(info)
+        info.header.adapterId, info.header.id = path.sourceAdapterId, path.sourceId
+        if user32.DisplayConfigGetDeviceInfo(ctypes.byref(info)) == 0 \
+                and info.viewGdiDeviceName == name:
+            return path.sourceAdapterId, path.sourceId
+    return None
+
+
+def _scale_info(adapter, source):
+    info = DPI_SCALE_GET()
+    info.header.type, info.header.size = GET_DPI_SCALE, ctypes.sizeof(info)
+    info.header.adapterId, info.header.id = adapter, source
+    if user32.DisplayConfigGetDeviceInfo(ctypes.byref(info)) != 0:
+        return None
+    recommended = -info.minScaleRel  # index of the recommended step in SCALE_STEPS
+    return recommended, info
+
+
+def get_scale(name):
+    """Current Windows scale of a display in percent, e.g. 200, or None."""
+    source = _source(name)
+    found = source and _scale_info(*source)
+    if not found:
+        return None
+    recommended, info = found
+    return SCALE_STEPS[recommended + info.curScaleRel]
+
+
+def set_scale(name, percent):
+    """Set a display's Windows scale (Settings > Display > Scale). True if it worked."""
+    source = _source(name)
+    found = source and _scale_info(*source)
+    if not found:
+        return False
+    recommended, info = found
+    rel = SCALE_STEPS.index(percent) - recommended
+    rel = max(info.minScaleRel, min(info.maxScaleRel, rel))
+    request = DPI_SCALE_SET()
+    request.header.type, request.header.size = SET_DPI_SCALE, ctypes.sizeof(request)
+    request.header.adapterId, request.header.id = source
+    request.scaleRel = rel
+    return user32.DisplayConfigSetDeviceInfo(ctypes.byref(request)) == 0
+
+
 def configure(name, width, height, x, y):
     """Set a display's resolution and its position on the desktop. True if it worked."""
     dm = DEVMODEW()
