@@ -32,4 +32,12 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
         NSLocalNetworkUsageDescription: Receives the PC screen over the USB cable.
+        # trackpad clicks arrive as pointer events (needed for pointer lock)
+        UIApplicationSupportsIndirectInputEvents: true
+        # scene-based UIKit startup: SceneDelegate sets a root controller that can
+        # lock the pointer (SwiftUI's own window can't)
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false

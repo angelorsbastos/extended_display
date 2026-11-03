@@ -28,6 +28,10 @@ struct LaptopMessage: Decodable {
     let width: Int?
     let height: Int?
     let message: String?
+    // clipboard: kind is "text" (with text) or "image" (with png, base64)
+    let kind: String?
+    let text: String?
+    let png: String?
 
     static func decode(_ data: Data) -> LaptopMessage? {
         let decoder = JSONDecoder()

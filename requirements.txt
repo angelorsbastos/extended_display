@@ -4,3 +4,5 @@ windows-capture
 winrt-runtime
 winrt-Windows.Media.Control
 winrt-Windows.Foundation
+pystray
+pillow
