@@ -21,6 +21,7 @@ import numpy as np
 from windows_capture import WindowsCapture
 
 import actions
+import layout
 import monitors
 import nowplaying
 import usbmux
@@ -138,8 +139,10 @@ def send_now_playing(session):
 
 
 def create_extend_screen(displays):
-    """Plug in a new virtual screen, sized for the iPad and placed right of the others.
-    Returns (driver index, monitor dict)."""
+    """Plug in a new virtual screen, sized for the iPad, where the user put it last
+    time in this setup (or right of the others the first time).
+    Returns (driver index, screen name, setup key)."""
+    setup = layout.setup_key()
     before = {m["name"] for m in monitors.list_monitors()}
     index = displays.add()
     for _ in range(50):
@@ -157,12 +160,15 @@ def create_extend_screen(displays):
         width, height = new["width"], new["height"]
         print(f"iPad resolution not available, using {width}x{height}: "
               "import pc/ipad-resolution.reg to fix")
-    right = max(m["left"] + m["width"] for m in monitors.list_monitors()
-                if m["name"] != new["name"])
-    monitors.configure(new["name"], width, height, right, 0)
+    position = layout.saved_position(setup)
+    if position is None:
+        right = max(m["left"] + m["width"] for m in monitors.list_monitors()
+                    if m["name"] != new["name"])
+        position = (right, 0)
+    monitors.configure(new["name"], width, height, *position)
     # at 100% a 2360x1640 screen on 10.9" makes everything tiny
     monitors.set_scale(new["name"], EXTEND_SCALE)
-    return index, new["name"]
+    return index, new["name"], setup
 
 
 def wait_until_screens_settle(timeout=4):
@@ -211,6 +217,7 @@ def handle(session):
     video = None
     displays = None      # Parsec driver connection, opened on the first Extend
     extend_index = None  # driver index of the screen we created for Extend
+    extend_name = extend_setup = None
 
     def stop_video():
         nonlocal video, extend_index
@@ -218,14 +225,17 @@ def handle(session):
             video.stop()
             video = None
         if extend_index is not None:
+            # remember where the user dragged it in Settings > Display, for next time
+            layout.save_position(extend_setup, extend_name)
             displays.remove(extend_index)
             extend_index = None
 
     def start_video(mode):
-        nonlocal displays, extend_index, video
+        nonlocal displays, extend_index, extend_name, extend_setup, video
         if mode == "extend":
             displays = displays or vdd.VirtualDisplays()
-            extend_index, name = create_extend_screen(displays)
+            extend_index, extend_name, extend_setup = create_extend_screen(displays)
+            name = extend_name
         else:
             name = monitors.primary_monitor()["name"]
         wait_until_screens_settle()
