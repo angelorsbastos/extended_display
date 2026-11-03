@@ -4,6 +4,10 @@ import CoreMedia
 /// Turns H.264 access units (Annex-B, as NVENC outputs them) into sample buffers
 /// for AVSampleBufferDisplayLayer, which decodes them in hardware and shows them.
 final class H264Decoder {
+    /// Called (on the main thread) when the layer had to be reset and can only
+    /// show video again after a keyframe; the argument says why, for the log.
+    var onNeedsKeyframe: ((String) -> Void)?
+
     private let layer: AVSampleBufferDisplayLayer
     private var sps: Data?
     private var pps: Data?
@@ -43,9 +47,16 @@ final class H264Decoder {
               let sample = Self.makeSample(units: frameUnits, format: format) else {
             return false
         }
-        DispatchQueue.main.async { [layer] in
-            if layer.status == .failed {
+        DispatchQueue.main.async { [layer, weak self] in
+            // After the app has been in the background for a few seconds, iPadOS
+            // shuts down the hardware decoder: the layer then either fails or
+            // silently needs a flush, and shows nothing until it gets a keyframe.
+            if layer.status == .failed || layer.requiresFlushToResumeDecoding {
+                let reason = layer.status == .failed
+                    ? "failed: \(layer.error?.localizedDescription ?? "unknown")"
+                    : "interrupted while in the background"
                 layer.flush()
+                self?.onNeedsKeyframe?(reason)
             }
             layer.enqueue(sample)
         }

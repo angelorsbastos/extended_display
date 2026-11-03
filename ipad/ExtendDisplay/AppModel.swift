@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     private var videoFlowing = false  // only touched on the server's queue
     private var started = false
     private var portrait = false
+    private var lastKeyframeRequest = Date.distantPast
     /// UIPasteboard.changeCount when we last synced, to spot new copies.
     private var pasteboardSeen = UIPasteboard.general.changeCount
 
@@ -44,6 +45,10 @@ final class AppModel: ObservableObject {
         started = true
 
         input.send = { [weak self] message in self?.server.send(json: message) }
+        decoder.onNeedsKeyframe = { [weak self] reason in
+            self?.log("video decoder reset (\(reason)), asking for a keyframe")
+            self?.requestKeyframe()
+        }
 
         server.onConnected = { [weak self] in
             DispatchQueue.main.async { self?.connected = true }
@@ -103,6 +108,24 @@ final class AppModel: ObservableObject {
 
     func media(_ action: String) {
         server.send(json: ["type": "media", "action": action])
+    }
+
+    /// The app is in front again (SceneDelegate).
+    func appBecameActive() {
+        sendClipboardIfChanged()
+        // the decoder may have been shut down while we were away; a keyframe
+        // brings the picture back even if nothing on the laptop screen changes
+        if case .video = screen {
+            requestKeyframe()
+        }
+    }
+
+    /// Ask the laptop to re-send the current picture as a full keyframe.
+    /// At most twice a second: a reset can be noticed on several frames in a row.
+    private func requestKeyframe() {
+        guard Date().timeIntervalSince(lastKeyframeRequest) > 0.5 else { return }
+        lastKeyframeRequest = Date()
+        server.send(json: ["type": "keyframe"])
     }
 
     /// A line for the laptop's log (pc/hub.log), for diagnosing problems.

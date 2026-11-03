@@ -33,8 +33,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        // something may have been copied in another app meanwhile
-        model.sendClipboardIfChanged()
+        model.appBecameActive()
     }
 }
 

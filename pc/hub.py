@@ -12,7 +12,8 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     touch {touches: [{id, x, y, state}]} (x/y are 0..1 of the image),
                     key {usage, down} (HID usage), mouse_move {dx, dy},
                     mouse_button {button, down}, scroll {dx, dy}, clipboard,
-                    log {text} (diagnostics, printed to the hub's log)
+                    log {text} (diagnostics, printed to the hub's log),
+                    keyframe (re-send the current picture as a full keyframe)
     laptop -> iPad: hello {shortcuts}, video_started {width, height},
                     now_playing {now_playing}, error {message}, clipboard
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
@@ -25,6 +26,7 @@ import time
 import traceback
 
 import numpy as np
+from av.video.frame import PictureType
 from windows_capture import WindowsCapture
 
 import actions
@@ -95,6 +97,7 @@ class VideoStream:
     def __init__(self, session, monitor_index):
         self.session = session
         self.stopped = threading.Event()
+        self.lock = threading.Lock()  # capture thread and keyframe() share the encoder
         self.codec = None
         self.frames = 0
         capture = WindowsCapture(cursor_capture=True, draw_border=False,
@@ -108,20 +111,38 @@ class VideoStream:
         if self.stopped.is_set():
             control.stop()
             return
-        if self.codec is None:
-            # a fresh encoder per stream, so the iPad's first frame is a keyframe
-            self.codec = make_encoder(frame.width, frame.height)
-            self.vf, self.view = make_frame(frame.width, frame.height)
-        np.copyto(self.view, frame.frame_buffer)
+        with self.lock:
+            if self.codec is None:
+                # a fresh encoder per stream, so the iPad's first frame is a keyframe
+                self.codec = make_encoder(frame.width, frame.height)
+                self.vf, self.view = make_frame(frame.width, frame.height)
+            np.copyto(self.view, frame.frame_buffer)
+            sent = self._encode(PictureType.NONE)
+        if not sent:
+            control.stop()
+
+    def keyframe(self):
+        """Re-send the current picture as a full keyframe. The iPad asks for this
+        when its decoder was reset (e.g. after the app was in the background):
+        it can't show anything until a keyframe arrives, and on a still screen
+        the next one could be a long way off."""
+        with self.lock:
+            if self.codec is not None and not self.stopped.is_set():
+                self._encode(PictureType.I)
+
+    def _encode(self, picture_type):
+        """Encode the frame in self.vf and send it; False if the iPad is gone."""
         self.vf.pts = self.frames
+        self.vf.pict_type = picture_type
         self.frames += 1
         try:
             for packet in self.codec.encode(self.vf):
                 self.session.send(MSG_VIDEO, bytes(packet))
+            return True
         except OSError:
             self.stopped.set()
-            control.stop()
             self.session.close()
+            return False
 
     def on_closed(self):
         self.stopped.set()
@@ -360,6 +381,9 @@ def handle(session):
                 clip.from_ipad(msg)
             elif kind == "log":
                 print(f"iPad: {msg.get('text')}")
+            elif kind == "keyframe":
+                if video:
+                    video.keyframe()
             elif kind in ("start_video", "stop_video"):
                 stop_video()
                 if kind == "start_video":

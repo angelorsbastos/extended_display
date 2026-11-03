@@ -15,9 +15,10 @@ def make_encoder(width, height, bit_rate=15_000_000):
     codec.pix_fmt = "bgr0"
     codec.time_base = Fraction(1, FPS)
     codec.bit_rate = bit_rate
-    # no B-frames, no lookahead, one frame in flight
+    # no B-frames, no lookahead, one frame in flight; forced-idr makes a frame we
+    # mark as I into a full keyframe (with SPS/PPS) that a fresh decoder can start from
     codec.options = {"preset": "p1", "tune": "ull", "zerolatency": "1", "delay": "0",
-                     "rc": "cbr", "bf": "0", "g": str(FPS * 2)}
+                     "rc": "cbr", "bf": "0", "g": str(FPS * 2), "forced-idr": "1"}
     codec.open()
     return codec
 
