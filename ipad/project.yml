@@ -44,3 +44,12 @@ targets:
         # lock the pointer (SwiftUI's own window can't)
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # files from the laptop show in the Files app (On My iPad > Extend Display)
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # any file can be shared to the app (Share > Extend Display) to send it to the laptop
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Any file
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.item, public.data, public.content]
+        NSPhotoLibraryUsageDescription: Lets you pick photos and videos to send to the laptop.
