@@ -4,7 +4,7 @@ import UIKit
 struct HomeView: View {
     @ObservedObject var model: AppModel
 
-    private let columns = [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 24), count: 3)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
@@ -19,17 +19,22 @@ struct HomeView: View {
             }
 
             LazyVGrid(columns: columns, spacing: 24) {
-                ModeCard(title: "Extend", subtitle: "Use the iPad as a second screen",
-                         icon: "display.2", tint: .blue) { model.open(.video(.extend)) }
-                ModeCard(title: "Mirror", subtitle: "Show the laptop's screen",
-                         icon: "rectangle.on.rectangle", tint: .purple) { model.open(.video(.mirror)) }
-                ModeCard(title: "Shortcuts", subtitle: "Buttons that run things on the laptop",
-                         icon: "square.grid.3x3.fill", tint: .orange) { model.open(.shortcuts) }
-                ModeCard(title: "Controls", subtitle: "Music, sound, screen, Wi-Fi, power",
-                         icon: "slider.horizontal.3", tint: .green) { model.open(.controls) }
+                Group {
+                    ModeCard(title: "Extend", subtitle: "Use the iPad as a second screen",
+                             icon: "display.2", tint: .blue) { model.open(.video(.extend)) }
+                    ModeCard(title: "Mirror", subtitle: "Show the laptop's screen",
+                             icon: "rectangle.on.rectangle", tint: .purple) { model.open(.video(.mirror)) }
+                    ModeCard(title: "Shortcuts", subtitle: "Buttons that run things on the laptop",
+                             icon: "square.grid.3x3.fill", tint: .orange) { model.open(.shortcuts) }
+                    ModeCard(title: "Controls", subtitle: "Music, sound, screen, Wi-Fi, power",
+                             icon: "slider.horizontal.3", tint: .green) { model.open(.controls) }
+                }
+                .disabled(!model.connected)
+                .opacity(model.connected ? 1 : 0.4)
+                // the history is kept on the iPad, so it opens even without the laptop
+                ModeCard(title: "Clipboard", subtitle: "The last \(ClipboardHistory.limit) things copied, on either side",
+                         icon: "list.clipboard", tint: .pink) { model.open(.clipboard) }
             }
-            .disabled(!model.connected)
-            .opacity(model.connected ? 1 : 0.4)
 
             ConnectionPanel(model: model)
             Spacer()

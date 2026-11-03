@@ -2,7 +2,8 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Full-screen video for Extend and Mirror. Three-finger tap goes back home.
+/// Full-screen video for Extend and Mirror. Three-finger tap goes back home,
+/// four-finger tap opens the clipboard history.
 struct VideoScreen: View {
     @ObservedObject var model: AppModel
     @State private var showHint = false
@@ -12,7 +13,8 @@ struct VideoScreen: View {
             Color.black
             VideoView(displayLayer: model.displayLayer, videoSize: model.videoSize,
                       onTouches: { model.touches($0) },
-                      onThreeFingerTap: { model.goHome() })
+                      onThreeFingerTap: { model.goHome() },
+                      onFourFingerTap: { withAnimation { model.showingClipboard = true } })
 
             if let error = model.videoError {
                 status(icon: "exclamationmark.triangle", text: error)
@@ -23,7 +25,7 @@ struct VideoScreen: View {
             if showHint {
                 VStack {
                     Spacer()
-                    Text("Tap with three fingers to go back")
+                    Text("Tap with three fingers to go back, four for the clipboard")
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20)
@@ -33,6 +35,10 @@ struct VideoScreen: View {
                 }
                 .transition(.opacity)
                 .allowsHitTesting(false)
+            }
+
+            if model.showingClipboard {
+                ClipboardPanel(model: model)
             }
         }
         .ignoresSafeArea()
@@ -72,34 +78,48 @@ struct VideoView: UIViewRepresentable {
     let videoSize: CGSize
     let onTouches: ([[String: Any]]) -> Void
     let onThreeFingerTap: () -> Void
+    let onFourFingerTap: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onTap: onThreeFingerTap)
+        Coordinator(onThree: onThreeFingerTap, onFour: onFourFingerTap)
     }
 
     func makeUIView(context: Context) -> LayerView {
         let view = LayerView(displayLayer: displayLayer)
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped))
-        tap.numberOfTouchesRequired = 3
-        view.addGestureRecognizer(tap)
+        let three = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.threeTapped))
+        three.numberOfTouchesRequired = 3
+        let four = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.fourTapped))
+        four.numberOfTouchesRequired = 4
+        // fingers rarely land at exactly the same moment: a four-finger tap
+        // shouldn't count as a three-finger one on the way
+        three.require(toFail: four)
+        view.addGestureRecognizer(three)
+        view.addGestureRecognizer(four)
         return view
     }
 
     func updateUIView(_ uiView: LayerView, context: Context) {
-        context.coordinator.onTap = onThreeFingerTap
+        context.coordinator.onThree = onThreeFingerTap
+        context.coordinator.onFour = onFourFingerTap
         uiView.videoSize = videoSize
         uiView.onTouches = onTouches
     }
 
     final class Coordinator: NSObject {
-        var onTap: () -> Void
+        var onThree: () -> Void
+        var onFour: () -> Void
 
-        init(onTap: @escaping () -> Void) {
-            self.onTap = onTap
+        init(onThree: @escaping () -> Void, onFour: @escaping () -> Void) {
+            self.onThree = onThree
+            self.onFour = onFour
         }
 
-        @objc func tapped() {
-            onTap()
+        @objc func threeTapped() {
+            onThree()
+        }
+
+        @objc func fourTapped() {
+            onFour()
         }
     }
 

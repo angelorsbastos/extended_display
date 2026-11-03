@@ -24,7 +24,8 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
                     now_playing {now_playing}, error {message}, clipboard,
                     controls {controls} (see controls.state)
-    clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
+    clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64};
+                           from the iPad also paste: true to press Ctrl+V after
 """
 import base64
 import ctypes
@@ -257,6 +258,8 @@ class ClipboardSync:
         # remember this change as ours, so it isn't echoed back to the iPad
         self.ours = clipboard.sequence_number()
         print(f"clipboard <- iPad ({message['kind']})")
+        if message.get("paste"):  # "Paste on laptop" in the iPad's clipboard history
+            actions.press("ctrl", "v")
 
 
 class ControlsWatch:
