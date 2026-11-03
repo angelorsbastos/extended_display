@@ -2,48 +2,69 @@
 
 state() returns everything the screen shows; apply(name, value) changes one thing.
 All of it works without admin rights.
-"""
-import asyncio
-import ctypes
-import re
-import subprocess
-import threading
-import winreg
-from ctypes import POINTER, cast, wintypes
 
-import comtypes
-import screen_brightness_control as sbc
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-from winrt.windows.devices.radios import Radio, RadioKind, RadioState
+Crash safety: audio goes through COM, and freeing COM objects at the wrong time
+crashes the whole process (see _endpoint_volume). COM runs in multi-thread mode
+and all the work happens on one dedicated thread, so objects are never used or
+released concurrently. Brightness deliberately avoids WMI (see _brightness).
+"""
+import sys
+
+# must be set before comtypes / pythoncom are first imported anywhere
+sys.coinit_flags = 0  # COINIT_MULTITHREADED
+
+import asyncio  # noqa: E402
+import ctypes  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
+import threading  # noqa: E402
+import winreg  # noqa: E402
+from concurrent.futures import ThreadPoolExecutor  # noqa: E402
+from ctypes import wintypes  # noqa: E402
+
+import comtypes  # noqa: E402
+from comtypes import CLSCTX_ALL  # noqa: E402
+from pycaw.constants import CLSID_MMDeviceEnumerator  # noqa: E402
+from pycaw.pycaw import IAudioEndpointVolume, IMMDeviceEnumerator  # noqa: E402
+from winrt.windows.devices.radios import Radio, RadioKind, RadioState  # noqa: E402
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 powrprof = ctypes.windll.powrprof
+COINIT_MULTITHREADED = 0x0
+
+
+def _start_com():
+    comtypes.CoInitializeEx(COINIT_MULTITHREADED)
+
+
+# every state() / apply() runs here, one at a time
+_worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="controls",
+                             initializer=_start_com)
 
 
 # ---- sound ------------------------------------------------------------------------
 
-def _com():
-    """pycaw talks COM, which every thread must switch on for itself."""
-    try:
-        comtypes.CoInitialize()
-    except OSError:
-        pass  # already on in this thread
+E_RENDER, E_CAPTURE, E_CONSOLE = 0, 1, 0
+
+
+def _endpoint_volume(flow):
+    enumerator = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator, IMMDeviceEnumerator,
+                                           CLSCTX_ALL)
+    device = enumerator.GetDefaultAudioEndpoint(flow, E_CONSOLE)  # COMError if none
+    # QueryInterface, NOT ctypes.cast (pycaw's usual example): cast makes a second
+    # pointer without AddRef, so the object gets Released twice and the garbage
+    # collector later crashes the whole hub with an access violation.
+    return device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None).QueryInterface(
+        IAudioEndpointVolume)
 
 
 def _speakers():
-    _com()
-    return AudioUtilities.GetSpeakers().EndpointVolume
+    return _endpoint_volume(E_RENDER)
 
 
 def _microphone():
-    _com()
-    mic = AudioUtilities.GetMicrophone()
-    if mic is None:
-        return None
-    return cast(mic.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None),
-                POINTER(IAudioEndpointVolume))
+    return _endpoint_volume(E_CAPTURE)
 
 
 # ---- screen and theme -------------------------------------------------------------
@@ -51,9 +72,48 @@ def _microphone():
 THEME_KEY = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
 
 
+# The laptop's own panel, through the \\.\LCD device. (Not WMI: the WMI library
+# uses pywin32, whose COM handling crashed the hub when mixed with pycaw's.)
+IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS = 0x230498
+IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS = 0x23049C
+DISPLAYPOLICY_BOTH = 3  # same level on charger and on battery
+kernel32.CreateFileW.restype = wintypes.HANDLE
+
+
+class DISPLAY_BRIGHTNESS(ctypes.Structure):
+    _fields_ = [("ucDisplayPolicy", ctypes.c_ubyte), ("ucACBrightness", ctypes.c_ubyte),
+                ("ucDCBrightness", ctypes.c_ubyte)]
+
+
+def _lcd_ioctl(code, in_buf=None, out_buf=None):
+    handle = kernel32.CreateFileW("\\\\.\\LCD", 0xC0000000, 0x3, None, 3, 0, None)  # read/write, shared, open existing
+    if handle in (None, wintypes.HANDLE(-1).value):
+        raise ctypes.WinError()
+    try:
+        done = wintypes.DWORD()
+        ok = kernel32.DeviceIoControl(
+            handle, code,
+            ctypes.byref(in_buf) if in_buf else None, ctypes.sizeof(in_buf) if in_buf else 0,
+            ctypes.byref(out_buf) if out_buf else None, ctypes.sizeof(out_buf) if out_buf else 0,
+            ctypes.byref(done), None)
+        if not ok:
+            raise ctypes.WinError()
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _brightness():
-    # "wmi" is the laptop's own panel; external monitors use a different method
-    return sbc.get_brightness(method="wmi")[0]
+    current = DISPLAY_BRIGHTNESS()
+    _lcd_ioctl(IOCTL_VIDEO_QUERY_DISPLAY_BRIGHTNESS, out_buf=current)
+    on_charger = SYSTEM_POWER_STATUS()
+    kernel32.GetSystemPowerStatus(ctypes.byref(on_charger))
+    return current.ucACBrightness if on_charger.ACLineStatus == 1 else current.ucDCBrightness
+
+
+def _set_brightness(level):
+    level = int(min(max(float(level), 0), 100))
+    _lcd_ioctl(IOCTL_VIDEO_SET_DISPLAY_BRIGHTNESS,
+               in_buf=DISPLAY_BRIGHTNESS(DISPLAYPOLICY_BOTH, level, level))
 
 
 def _dark_mode():
@@ -187,6 +247,17 @@ def _safe(read, default=None):
 
 
 def state():
+    """Everything the Controls screen shows (runs on the controls thread)."""
+    return _worker.submit(_state).result()
+
+
+def apply(name, value=None):
+    """Change one setting, or run a power action (lock, sleep, restart, shutdown).
+    Runs on the controls thread; errors are raised here in the caller."""
+    return _worker.submit(_apply, name, value).result()
+
+
+def _state():
     speakers = _safe(_speakers)
     mic = _safe(_microphone)
     radios = _safe(_radio_states, {})
@@ -206,8 +277,7 @@ def state():
     }
 
 
-def apply(name, value=None):
-    """Change one setting, or run a power action (lock, sleep, restart, shutdown)."""
+def _apply(name, value):
     if name == "volume":
         _speakers().SetMasterVolumeLevelScalar(min(max(float(value), 0), 100) / 100, None)
     elif name == "muted":
@@ -215,7 +285,7 @@ def apply(name, value=None):
     elif name == "mic_muted":
         _microphone().SetMute(bool(value), None)
     elif name == "brightness":
-        sbc.set_brightness(int(min(max(float(value), 0), 100)), method="wmi")
+        _set_brightness(value)
     elif name == "dark_mode":
         _set_dark_mode(bool(value))
     elif name in RADIO_KINDS:
