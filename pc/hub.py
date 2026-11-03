@@ -31,6 +31,9 @@ PORT = 7000
 MSG_VIDEO = 1
 MSG_JSON = 2
 IPAD_SIZE = (2360, 1640)  # iPad 10 screen; offered once ipad-resolution.reg is imported
+# Windows scale for the Extend screen. 200% shows things at the size iPadOS itself
+# uses; try 175 for more room or 225 for bigger text.
+EXTEND_SCALE = 200
 
 
 class Session:
@@ -157,6 +160,8 @@ def create_extend_screen(displays):
     right = max(m["left"] + m["width"] for m in monitors.list_monitors()
                 if m["name"] != new["name"])
     monitors.configure(new["name"], width, height, right, 0)
+    # at 100% a 2360x1640 screen on 10.9" makes everything tiny
+    monitors.set_scale(new["name"], EXTEND_SCALE)
     return index, new["name"]
 
 
@@ -226,7 +231,7 @@ def handle(session):
         wait_until_screens_settle()
         video, monitor = start_capture(session, name)
         print(f"{mode}: streaming {name} as monitor {monitor['index']} "
-              f"({monitor['width']}x{monitor['height']})")
+              f"({monitor['width']}x{monitor['height']}, scale {monitors.get_scale(name)}%)")
 
     # whatever goes wrong, remove the virtual screen and end the session cleanly:
     # otherwise the ping thread keeps the screen alive with nothing using it
