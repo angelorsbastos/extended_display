@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+; Adds the iPad 10's screen size (2360 x 1640 at 60 Hz) to the resolutions the
+; Parsec Virtual Display Driver offers. Double-click to import (needs admin).
+; Values are hexadecimal: 0x938 = 2360, 0x668 = 1640, 0x3c = 60.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Parsec\vdd\0]
+"width"=dword:00000938
+"height"=dword:00000668
+"hz"=dword:0000003c
