@@ -93,8 +93,8 @@ struct RootView: View {
                     VideoScreen(model: model)
                 case .shortcuts:
                     ShortcutsView(model: model)
-                case .media:
-                    MediaView(model: model)
+                case .controls:
+                    ControlsView(model: model)
                 }
             }
             .onAppear { model.updateOrientation(size: geometry.size) }

@@ -20,11 +20,38 @@ struct NowPlaying: Decodable, Equatable {
     let playing: Bool
 }
 
+struct PowerPlan: Decodable, Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
+struct Battery: Decodable, Equatable {
+    let percent: Int?
+    let charging: Bool
+}
+
+/// The laptop's settings for the Controls screen (pc/controls.py state()).
+/// nil fields are ones the laptop couldn't read.
+struct ControlsState: Decodable, Equatable {
+    var volume: Int?
+    var muted: Bool?
+    var micMuted: Bool?
+    var brightness: Int?
+    var darkMode: Bool?
+    var wifi: Bool?
+    var bluetooth: Bool?
+    var battery: Battery?
+    var keepAwake: Bool?
+    var powerPlans: [PowerPlan]?
+    var powerPlan: String?
+}
+
 /// Any JSON message from the laptop; which fields are set depends on `type`.
 struct LaptopMessage: Decodable {
     let type: String
     let shortcuts: [Shortcut]?
     let nowPlaying: NowPlaying?
+    let controls: ControlsState?
     let width: Int?
     let height: Int?
     let message: String?

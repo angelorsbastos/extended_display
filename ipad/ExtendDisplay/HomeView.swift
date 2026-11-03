@@ -21,8 +21,8 @@ struct HomeView: View {
                          icon: "rectangle.on.rectangle", tint: .purple) { model.open(.video(.mirror)) }
                 ModeCard(title: "Shortcuts", subtitle: "Buttons that run things on the laptop",
                          icon: "square.grid.3x3.fill", tint: .orange) { model.open(.shortcuts) }
-                ModeCard(title: "Media", subtitle: "Play, pause, skip, volume",
-                         icon: "playpause.fill", tint: .green) { model.open(.media) }
+                ModeCard(title: "Controls", subtitle: "Music, sound, screen, Wi-Fi, power",
+                         icon: "slider.horizontal.3", tint: .green) { model.open(.controls) }
             }
             .disabled(!model.connected)
             .opacity(model.connected ? 1 : 0.4)
