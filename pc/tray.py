@@ -51,7 +51,7 @@ def main():
     def on_status(text):
         print(text)
         status["text"] = text
-        icon.title = f"Extend Display: {text}"
+        icon.title = f"Extend Display: {text}"[:127]  # Windows' limit for tooltips
         icon.update_menu()
 
     def quit_hub(icon, _item):

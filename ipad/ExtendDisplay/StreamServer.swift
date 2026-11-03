@@ -24,6 +24,18 @@ final class StreamServer {
     var onPairingRequest: ((String) -> Void)?
     /// Pairing is over: nil when it worked, otherwise what went wrong.
     var onPairingEnded: ((String?) -> Void)?
+    /// What the Wi-Fi side is doing, for the home screen.
+    var onWifiState: ((WifiState) -> Void)?
+
+    enum WifiState: Equatable {
+        case starting
+        case visible(name: String)  // announced on the network, laptops can find it
+        case noPermission           // Settings > Privacy & Security > Local Network is off
+        case problem(String)
+    }
+
+    /// iPadOS refuses Bonjour with this DNS-SD error when Local Network access is off.
+    private static let policyDenied: Int32 = -65570  // kDNSServiceErr_PolicyDenied
 
     private let queue = DispatchQueue(label: "stream-server")
     private let deviceName = UIDevice.current.name
@@ -107,11 +119,32 @@ final class StreamServer {
         }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection, transport) }
         listener.stateUpdateHandler = { [weak self] state in
-            // e.g. after the app was suspended for a long time: start listening again
-            if case .failed = state {
-                self?.queue.asyncAfter(deadline: .now() + 2) {
-                    self?.listeners[port]?.cancel()
-                    try? self?.listen(port: port, transport: transport)
+            guard let self else { return }
+            switch state {
+            case .waiting(let error), .failed(let error):
+                if transport == .wifi {
+                    if case .dns(let code) = error, code == Self.policyDenied {
+                        self.onWifiState?(.noPermission)
+                    } else {
+                        self.onWifiState?(.problem(error.localizedDescription))
+                    }
+                }
+                // e.g. after the app was suspended for a long time: start listening again
+                if case .failed = state {
+                    self.queue.asyncAfter(deadline: .now() + 2) {
+                        self.listeners[port]?.cancel()
+                        try? self.listen(port: port, transport: transport)
+                    }
+                }
+            default:
+                break
+            }
+        }
+        if transport == .wifi {
+            onWifiState?(.starting)
+            listener.serviceRegistrationUpdateHandler = { [weak self] change in
+                if case .add(let endpoint) = change, case .service(let name, _, _, _) = endpoint {
+                    self?.onWifiState?(.visible(name: name))
                 }
             }
         }
