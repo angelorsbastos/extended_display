@@ -42,5 +42,7 @@ def _query():
         if peer.get("OS") == "iOS" and peer.get("Online") and peer.get("TailscaleIPs"):
             ipv4 = [ip for ip in peer["TailscaleIPs"] if "." in ip]
             if ipv4:
-                found.append({"name": peer.get("HostName") or "iPad", "address": ipv4[0]})
+                # iPadOS gives every device the HostName "localhost"; the DNS name is the real one
+                name = (peer.get("DNSName") or "").split(".")[0] or "the iPad"
+                found.append({"name": name, "address": ipv4[0]})
     return found, None if found else "the iPad isn't online in Tailscale"
