@@ -1,4 +1,4 @@
-import SwiftUI
+﻿import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var model: AppModel
@@ -11,7 +11,7 @@ struct HomeView: View {
                 Text("Extend Display")
                     .font(.largeTitle.bold())
                 Spacer()
-                ConnectionBadge(connected: model.connected)
+                ConnectionBadge(transport: model.transport)
             }
 
             LazyVGrid(columns: columns, spacing: 24) {
@@ -27,8 +27,14 @@ struct HomeView: View {
             .disabled(!model.connected)
             .opacity(model.connected ? 1 : 0.4)
 
+            if let message = model.pairingMessage {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             if !model.connected {
-                Text(model.listenError ?? "Plug the iPad into the laptop and open Extend Display there.")
+                Text(model.listenError ?? "Plug the iPad into the laptop, or use the same Wi-Fi as the "
+                     + "laptop, and open Extend Display there.")
                     .font(.body)
                     .foregroundStyle(.secondary)
             }
@@ -69,14 +75,22 @@ struct ModeCard: View {
 }
 
 struct ConnectionBadge: View {
-    let connected: Bool
+    let transport: Transport?
+
+    private var text: String {
+        switch transport {
+        case .usb: return "Connected by cable"
+        case .wifi: return "Connected over Wi-Fi"
+        case nil: return "Laptop not connected"
+        }
+    }
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(connected ? Color.green : Color.gray)
-                .frame(width: 10, height: 10)
-            Text(connected ? "Laptop connected" : "Laptop not connected")
+            Image(systemName: transport == .wifi ? "wifi" : transport == .usb ? "cable.connector" : "circle.fill")
+                .font(.system(size: transport == nil ? 9 : 13, weight: .semibold))
+                .foregroundStyle(transport == nil ? Color.gray : Color.green)
+            Text(text)
                 .font(.callout)
                 .foregroundStyle(.white)
         }
@@ -103,7 +117,7 @@ struct TopBar: View {
                         .font(.title3.weight(.semibold))
                 }
                 Spacer()
-                ConnectionBadge(connected: model.connected)
+                ConnectionBadge(transport: model.transport)
             }
         }
         .foregroundStyle(.white)

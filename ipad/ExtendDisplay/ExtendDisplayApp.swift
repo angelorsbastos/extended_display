@@ -96,6 +96,9 @@ struct RootView: View {
                 case .controls:
                     ControlsView(model: model)
                 }
+                if let laptop = model.pairingLaptop {
+                    PairingView(model: model, laptopName: laptop)
+                }
             }
             .onAppear { model.updateOrientation(size: geometry.size) }
             .onChange(of: geometry.size) { size in model.updateOrientation(size: size) }

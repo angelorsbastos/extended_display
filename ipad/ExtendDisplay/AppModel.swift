@@ -15,6 +15,12 @@ enum Screen: Equatable {
 /// App state, shared by all screens. Published properties change on the main thread only.
 final class AppModel: ObservableObject {
     @Published var connected = false
+    /// How the laptop is connected right now, when it is.
+    @Published var transport: Transport?
+    /// Set while a laptop asks to pair over Wi-Fi: its name, for the code screen.
+    @Published var pairingLaptop: String?
+    /// The outcome of the last pairing, shown on the home screen.
+    @Published var pairingMessage: String?
     @Published var screen: Screen = .home
     @Published var shortcuts: [Shortcut] = []
     @Published var nowPlaying: NowPlaying?
@@ -53,13 +59,29 @@ final class AppModel: ObservableObject {
             self?.requestKeyframe()
         }
 
-        server.onConnected = { [weak self] in
-            DispatchQueue.main.async { self?.connected = true }
+        server.onConnected = { [weak self] transport in
+            DispatchQueue.main.async {
+                self?.connected = true
+                self?.transport = transport
+            }
+        }
+        server.onPairingRequest = { [weak self] laptopName in
+            DispatchQueue.main.async {
+                self?.pairingMessage = nil
+                self?.pairingLaptop = laptopName
+            }
+        }
+        server.onPairingEnded = { [weak self] problem in
+            DispatchQueue.main.async {
+                self?.pairingLaptop = nil
+                self?.pairingMessage = problem ?? "Paired. The laptop now connects over Wi-Fi too."
+            }
         }
         server.onDisconnected = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.connected = false
+                self.transport = nil
                 self.nowPlaying = nil
                 self.controls = nil
                 if case .video = self.screen {
@@ -79,7 +101,7 @@ final class AppModel: ObservableObject {
         do {
             try server.start()
         } catch {
-            listenError = "Could not listen on port \(StreamServer.port): \(error.localizedDescription)"
+            listenError = "Could not start listening for the laptop: \(error.localizedDescription)"
         }
     }
 
@@ -125,6 +147,14 @@ final class AppModel: ObservableObject {
     /// Change a laptop setting or run a power action; see pc/controls.py apply().
     func control(_ name: String, _ value: Any = true) {
         server.send(json: ["type": "control", "name": name, "value": value])
+    }
+
+    func submitPairingCode(_ code: String) {
+        server.submitPairingCode(code)
+    }
+
+    func cancelPairing() {
+        server.cancelPairing()
     }
 
     /// The app is in front again (SceneDelegate).

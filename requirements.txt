@@ -8,3 +8,5 @@ pystray
 pillow
 pycaw
 winrt-Windows.Devices.Radios
+cryptography
+zeroconf
