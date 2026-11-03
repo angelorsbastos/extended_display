@@ -14,9 +14,16 @@ on:
 permissions:
   contents: write  # to create releases
 
+# a newer push replaces a build that is still waiting or running
+concurrency:
+  group: build-ipad
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: macos-15
+    # Intel Macs: the free Apple-silicon ones are often too busy to start a job
+    # ("not acquired by Runner"). Either kind builds the same iPad app.
+    runs-on: macos-15-intel
     defaults:
       run:
         working-directory: ipad
@@ -74,7 +81,12 @@ jobs:
           tag="build-$BUILD"
           url="https://github.com/${{ github.repository }}/releases/download/$tag/ExtendDisplay.ipa"
           python3 make_source.py "$VERSION" "$BUILD" ExtendDisplay.ipa "$url" source.json
+          # SideStore reads the "latest" release; never let an older build that
+          # finished late (e.g. a re-run) take that over from a newer one
+          newest=$(gh release list --limit 100 --json tagName --jq '[.[].tagName | ltrimstr("build-") | tonumber] | max // 0')
+          latest=true
+          if [ "$newest" -gt "$BUILD" ]; then latest=false; fi
           gh release create "$tag" ExtendDisplay.ipa source.json \
             --title "Extend Display $VERSION" \
             --notes "Built from ${{ github.sha }}" \
-            --latest
+            --latest="$latest"
