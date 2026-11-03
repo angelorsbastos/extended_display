@@ -1,0 +1,10 @@
+[
+  {"id": "screenshot",   "title": "Screenshot",   "icon": "camera.viewfinder",   "keys": ["win", "shift", "s"]},
+  {"id": "task_view",    "title": "Task View",    "icon": "square.grid.2x2",     "keys": ["win", "tab"]},
+  {"id": "desktop",      "title": "Show Desktop", "icon": "desktopcomputer",     "keys": ["win", "d"]},
+  {"id": "explorer",     "title": "Files",        "icon": "folder",              "keys": ["win", "e"]},
+  {"id": "task_manager", "title": "Task Manager", "icon": "chart.bar.xaxis",     "keys": ["ctrl", "shift", "esc"]},
+  {"id": "spotify",      "title": "Spotify",      "icon": "music.note",          "open": "spotify:"},
+  {"id": "vscode",       "title": "VS Code",      "icon": "chevron.left.forwardslash.chevron.right", "run": "code"},
+  {"id": "lock",         "title": "Lock",         "icon": "lock.fill",           "lock": true}
+]
