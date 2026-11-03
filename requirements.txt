@@ -10,3 +10,4 @@ pycaw
 winrt-Windows.Devices.Radios
 cryptography
 zeroconf
+soundcard

@@ -19,6 +19,7 @@ final class StreamServer {
     var onConnected: ((Transport) -> Void)?
     var onDisconnected: (() -> Void)?
     var onVideo: ((Data) -> Void)?
+    var onAudio: ((Data) -> Void)?
     var onMessage: ((LaptopMessage) -> Void)?
     /// A laptop wants to pair over Wi-Fi: show a screen where the user types its code.
     var onPairingRequest: ((String) -> Void)?
@@ -239,6 +240,8 @@ final class StreamServer {
         switch MessageType(rawValue: type) {
         case .video:
             if link === active { onVideo?(payload) }
+        case .audio:
+            if link === active { onAudio?(payload) }
         case .json:
             if link.transport == .usb,
                let message = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
