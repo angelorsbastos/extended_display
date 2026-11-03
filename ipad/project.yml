@@ -34,7 +34,10 @@ targets:
           - UIInterfaceOrientationLandscapeRight
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
-        NSLocalNetworkUsageDescription: Receives the PC screen over the USB cable.
+        NSLocalNetworkUsageDescription: Connects to Extend Display on your laptop over Wi-Fi.
+        # announced so the laptop can find the iPad on the Wi-Fi (like AirPlay)
+        NSBonjourServices:
+          - _extenddisplay._tcp
         # trackpad clicks arrive as pointer events (needed for pointer lock)
         UIApplicationSupportsIndirectInputEvents: true
         # scene-based UIKit startup: SceneDelegate sets a root controller that can

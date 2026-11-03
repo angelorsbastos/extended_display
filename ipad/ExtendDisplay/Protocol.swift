@@ -3,8 +3,13 @@ import Foundation
 /// Wire format, both directions: [u8 type][u32 big-endian length][payload].
 /// See pc/hub.py for the list of JSON messages.
 enum MessageType: UInt8 {
-    case video = 1  // H.264, laptop -> iPad
-    case json = 2   // both ways
+    case video = 1   // H.264, laptop -> iPad
+    case json = 2    // both ways
+    case sealed = 3  // a video or json message encrypted by Cipher (all of Wi-Fi)
+}
+
+enum Transport: String {
+    case usb, wifi
 }
 
 struct Shortcut: Decodable, Identifiable, Equatable {

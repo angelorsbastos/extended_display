@@ -12,3 +12,5 @@ ipad/build/
 # where the Extend screen was last placed, per setup (personal)
 pc/extend_layout.json
 pc/hub.log
+# pairing keys (DPAPI-encrypted, but personal)
+pc/pairings.json

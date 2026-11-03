@@ -1,12 +1,15 @@
 """The laptop side of Extend Display: start once, then the iPad decides what to do.
 
 Usage: python hub.py
-Waits for the iPad over USB (Extend Display app open), then handles its requests:
-stream a screen (extend / mirror), run shortcuts from shortcuts.json, control media.
+Waits for the iPad (Extend Display app open) over the USB cable or, once paired,
+over Wi-Fi, then handles its requests: stream a screen (extend / mirror), input,
+shortcuts from shortcuts.json, the Controls screen. The cable wins when both work.
 
 Wire format, both directions: [u8 type][u32 big-endian length][payload]
   type 1 = H.264 video (laptop -> iPad)
+  type 3 = a type 1 or 2 message sealed by secure.Cipher (all of Wi-Fi, after login)
   type 2 = JSON message (both ways), always with a "type" field:
+    connection setup: identity (iPad, first), pairing and login: see secure.py
     iPad -> laptop: start_video {mode, portrait}, stop_video, orientation {portrait},
                     shortcut {id}, media {action},
                     touch {touches: [{id, x, y, state}]} (x/y are 0..1 of the image),
@@ -21,7 +24,9 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
 """
 import base64
+import ctypes
 import json
+import socket
 import struct
 import threading
 import time
@@ -34,10 +39,12 @@ from windows_capture import WindowsCapture
 import actions
 import clipboard
 import controls
+import discovery
 import inputs
 import layout
 import monitors
 import nowplaying
+import secure
 import usbmux
 import vdd
 from encoder import FPS, make_encoder, make_frame
@@ -45,6 +52,10 @@ from encoder import FPS, make_encoder, make_frame
 PORT = 7000
 MSG_VIDEO = 1
 MSG_JSON = 2
+MSG_SEALED = 3
+# Wi-Fi bandwidth is less steady than the cable's; less data means less stutter
+BIT_RATE = {"usb": 15_000_000, "wifi": 8_000_000}
+WIFI_PAIRING_RETRY = 60  # seconds before offering pairing again after a cancel
 IPAD_SIZE = (2360, 1640)  # iPad 10 screen; offered once ipad-resolution.reg is imported
 # Windows scale for the Extend screen. 200% shows things at the size iPadOS itself
 # uses; try 175 for more room or 225 for bigger text.
@@ -52,26 +63,48 @@ EXTEND_SCALE = 200
 
 
 class Session:
-    """One connection to the iPad. Safe to send from several threads."""
+    """One connection to the iPad. Safe to send from several threads.
+    transport is "usb" or "wifi"; once `cipher` is set (Wi-Fi, after login),
+    everything is sealed both ways and unsealed messages are refused."""
 
-    def __init__(self, sock):
+    def __init__(self, sock, transport="usb"):
         self.sock = sock
+        self.transport = transport
+        self.cipher = None
         self.send_lock = threading.Lock()
         self.closed = threading.Event()
 
     def send(self, msg_type, payload):
-        with self.send_lock:
+        with self.send_lock:  # also keeps the cipher's message count in wire order
+            if self.cipher:
+                payload, msg_type = self.cipher.seal(bytes([msg_type]) + payload), MSG_SEALED
             self.sock.sendall(struct.pack(">BI", msg_type, len(payload)) + payload)
 
     def send_json(self, message):
         self.send(MSG_JSON, json.dumps(message).encode())
 
+    def read(self):
+        """The next message as (type, payload), unsealed if the link is encrypted."""
+        msg_type, length = struct.unpack(">BI", self._recv_exact(5))
+        payload = self._recv_exact(length)
+        if self.cipher:
+            if msg_type != MSG_SEALED:
+                raise OSError("unencrypted message on an encrypted link")
+            opened = self.cipher.open(payload)
+            msg_type, payload = opened[0], opened[1:]
+        return msg_type, payload
+
+    def recv_json(self):
+        msg_type, payload = self.read()
+        if msg_type != MSG_JSON:
+            raise OSError(f"expected a JSON message, got type {msg_type}")
+        return json.loads(payload)
+
     def messages(self):
         """Yield the JSON messages the iPad sends, until it disconnects."""
         try:
             while True:
-                msg_type, length = struct.unpack(">BI", self._recv_exact(5))
-                payload = self._recv_exact(length)
+                msg_type, payload = self.read()
                 if msg_type == MSG_JSON:
                     yield json.loads(payload)
         except (OSError, EOFError):
@@ -117,7 +150,8 @@ class VideoStream:
         with self.lock:
             if self.codec is None:
                 # a fresh encoder per stream, so the iPad's first frame is a keyframe
-                self.codec = make_encoder(frame.width, frame.height)
+                self.codec = make_encoder(frame.width, frame.height,
+                                          bit_rate=BIT_RATE[self.session.transport])
                 self.vf, self.view = make_frame(frame.width, frame.height)
             np.copyto(self.view, frame.frame_buffer)
             sent = self._encode(PictureType.NONE)
@@ -462,9 +496,30 @@ def handle(session):
         session.close()
 
 
-def wait_for_ipad(stop, on_status):
-    """Block until an iPad is plugged in with the app open; return the socket,
-    or None if `stop` gets set first."""
+class CodePopup:
+    """Shows the 6-digit pairing code on the laptop, and closes it again."""
+
+    TITLE = "Extend Display pairing"
+
+    def show(self, code, ipad_name):
+        print(f"pairing code for {ipad_name}: {code}")
+        text = (f"Type this code on {ipad_name}:\n\n        {code[:3]} {code[3:]}\n\n"
+                "This window closes by itself when pairing is done.")
+        threading.Thread(target=ctypes.windll.user32.MessageBoxW, daemon=True,
+                         args=(None, text, self.TITLE, 0x40 | 0x40000)).start()  # info icon, on top
+
+    def hide(self):
+        for _ in range(10):  # the window may still be opening
+            window = ctypes.windll.user32.FindWindowW(None, self.TITLE)
+            if window:
+                ctypes.windll.user32.PostMessageW(window, 0x10, 0, 0)  # WM_CLOSE
+                return
+            time.sleep(0.1)
+
+
+def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
+    """Block until the iPad is reachable with the app open, over the cable (preferred)
+    or Wi-Fi; return a Session, or None if `stop` gets set first."""
     waiting_for = None
     while not stop.is_set():
         try:
@@ -472,12 +527,25 @@ def wait_for_ipad(stop, on_status):
         except OSError:
             devices, reason = None, "Apple's USB service isn't running (install Apple Devices or iTunes)."
         if devices == []:
-            reason = "Plug in the iPad, unlock it and tap 'Trust'."
+            reason = "Plug in the iPad, or open Extend Display on it on the same Wi-Fi."
         elif devices:
             try:
-                return usbmux.connect(devices[0]["DeviceID"], PORT)
+                return Session(usbmux.connect(devices[0]["DeviceID"], PORT), "usb")
             except usbmux.UsbmuxError:
                 reason = "iPad found. Open the Extend Display app on it."
+
+        for ipad in browser.ipads() if browser else []:
+            unpaired = secure.key_for(ipad["id"]) is None
+            if unpaired and pairing_paused_until.get(ipad["id"], 0) > time.time():
+                continue  # pairing was just cancelled; don't pop it up again right away
+            try:
+                sock = socket.create_connection((ipad["address"], ipad["port"]), timeout=3)
+            except OSError:
+                continue
+            sock.settimeout(None)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            return Session(sock, "wifi")
+
         if reason != waiting_for:
             on_status(reason)
             waiting_for = reason
@@ -485,26 +553,84 @@ def wait_for_ipad(stop, on_status):
     return None
 
 
+def set_up_link(session, on_status, pairing_paused_until):
+    """Before the normal conversation: learn who the iPad is, pair if needed, and on
+    Wi-Fi log in and switch to encryption. Raises if the link can't be trusted."""
+    session.sock.settimeout(3)
+    try:
+        identity = session.recv_json()
+    except socket.timeout:
+        if session.transport == "wifi":
+            raise
+        identity = None  # an app version from before Wi-Fi support: the cable is enough
+    if identity is not None and identity.get("type") != "identity":
+        raise OSError(f"expected identity, got {identity.get('type')}")
+
+    if identity:
+        ipad_id, name = identity["ipad_id"], identity.get("ipad_name", "the iPad")
+        knows_us = secure.laptop_id() in identity.get("paired_laptops", [])
+        key = secure.key_for(ipad_id) if knows_us else None
+        if session.transport == "usb":
+            if key is None:
+                secure.pair_over_usb(session, identity)
+                on_status(f"Paired with {name} through the cable; Wi-Fi works now too.")
+        else:
+            if key is None:
+                on_status(f"Pairing with {name}: type the code shown on the laptop.")
+                session.sock.settimeout(120)  # the user is typing
+                try:
+                    secure.pair_over_wifi(session, identity, CodePopup().show, CodePopup().hide)
+                except (secure.PairingFailed, OSError):
+                    pairing_paused_until[ipad_id] = time.time() + WIFI_PAIRING_RETRY
+                    raise
+                session.sock.settimeout(3)
+                key = secure.key_for(ipad_id)
+                on_status(f"Paired with {name}.")
+            secure.authenticate(session, ipad_id, key)
+    session.sock.settimeout(None)
+
+
+def serve(session, on_status, pairing_paused_until):
+    try:
+        set_up_link(session, on_status, pairing_paused_until)
+    except (OSError, ValueError, KeyError, secure.PairingFailed, secure.NeedsPairing) as e:
+        print(f"{session.transport} connection not used: {e or type(e).__name__}")
+        session.close()
+        return
+    on_status(f"iPad connected ({'cable' if session.transport == 'usb' else 'Wi-Fi'}).")
+    handle(session)
+
+
 def run(stop, on_status=print):
     """Serve the iPad until `stop` is set. on_status gets short status texts."""
-    while not stop.is_set():
-        sock = wait_for_ipad(stop, on_status)
-        if sock is None:
-            return
-        session = Session(sock)
-        on_status("iPad connected.")
-        # the reader runs in a thread so the wait below can notice `stop` and Ctrl+C
-        worker = threading.Thread(target=handle, args=(session,), daemon=True)
-        worker.start()
-        try:
-            while not session.closed.wait(0.2) and not stop.is_set():
-                pass
-        finally:
-            # closing the socket ends handle(), which saves the layout and
-            # removes the virtual screen
-            session.close()
-            worker.join(timeout=5)
-        on_status("iPad disconnected.")
+    try:
+        browser = discovery.Browser()
+    except OSError as e:  # e.g. no network at all: the cable still works
+        print(f"Wi-Fi discovery unavailable: {e}")
+        browser = None
+    pairing_paused_until = {}  # iPad id -> time
+    try:
+        while not stop.is_set():
+            session = wait_for_ipad(stop, on_status, browser, pairing_paused_until)
+            if session is None:
+                return
+            # setup and the reader run in a thread so the wait below can notice
+            # `stop` and Ctrl+C, even while pairing waits for the user to type
+            worker = threading.Thread(target=serve, daemon=True,
+                                      args=(session, on_status, pairing_paused_until))
+            worker.start()
+            try:
+                while not session.closed.wait(0.2) and not stop.is_set():
+                    pass
+            finally:
+                # closing the socket ends handle(), which saves the layout and
+                # removes the virtual screen
+                session.close()
+                worker.join(timeout=5)
+            on_status("iPad disconnected.")
+    finally:
+        if browser:
+            browser.close()
 
 
 def main():
