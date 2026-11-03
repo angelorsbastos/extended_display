@@ -21,12 +21,18 @@ final class AppModel: ObservableObject {
     @Published var receivingVideo = false
     @Published var videoError: String?
     @Published var listenError: String?
+    /// Size of the laptop screen being streamed, to map touches onto it.
+    @Published var videoSize = CGSize(width: 16, height: 9)
 
     let displayLayer = AVSampleBufferDisplayLayer()
     private let server = StreamServer()
+    private let input = InputCapture()
     private lazy var decoder = H264Decoder(layer: displayLayer)
     private var videoFlowing = false  // only touched on the server's queue
     private var started = false
+    private var portrait = false
+    /// UIPasteboard.changeCount when we last synced, to spot new copies.
+    private var pasteboardSeen = UIPasteboard.general.changeCount
 
     init() {
         displayLayer.videoGravity = .resizeAspect
@@ -36,6 +42,8 @@ final class AppModel: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+
+        input.send = { [weak self] message in self?.server.send(json: message) }
 
         server.onConnected = { [weak self] in
             DispatchQueue.main.async { self?.connected = true }
@@ -74,7 +82,8 @@ final class AppModel: ObservableObject {
             receivingVideo = false
             videoError = nil
             displayLayer.flushAndRemoveImage()
-            server.send(json: ["type": "start_video", "mode": mode.rawValue])
+            input.active = true
+            server.send(json: ["type": "start_video", "mode": mode.rawValue, "portrait": portrait])
         }
     }
 
@@ -83,6 +92,7 @@ final class AppModel: ObservableObject {
             server.send(json: ["type": "stop_video"])
             displayLayer.flushAndRemoveImage()
         }
+        input.active = false
         receivingVideo = false
         screen = .home
     }
@@ -93,6 +103,37 @@ final class AppModel: ObservableObject {
 
     func media(_ action: String) {
         server.send(json: ["type": "media", "action": action])
+    }
+
+    /// Fingers on the video, as fractions of the laptop screen (see VideoView).
+    func touches(_ touches: [[String: Any]]) {
+        server.send(json: ["type": "touch", "touches": touches])
+    }
+
+    /// Called whenever the window's size changes, i.e. when the iPad rotates.
+    func updateOrientation(size: CGSize) {
+        let isPortrait = size.height > size.width
+        guard isPortrait != portrait else { return }
+        portrait = isPortrait
+        // only Extend follows: Mirror can't rotate the laptop's own screen
+        if screen == .video(.extend) {
+            server.send(json: ["type": "orientation", "portrait": isPortrait])
+        }
+    }
+
+    /// Send what was copied on the iPad (in any app) to the laptop. Called when
+    /// the app comes back to the front. iPadOS asks permission to read the
+    /// clipboard unless Settings > Extend Display > Paste from Other Apps is Allow.
+    func sendClipboardIfChanged() {
+        let pasteboard = UIPasteboard.general
+        guard connected, pasteboard.changeCount != pasteboardSeen else { return }
+        pasteboardSeen = pasteboard.changeCount
+        if pasteboard.hasImages, let png = pasteboard.image?.pngData() {
+            server.send(json: ["type": "clipboard", "kind": "image",
+                               "png": png.base64EncodedString()])
+        } else if pasteboard.hasStrings, let text = pasteboard.string {
+            server.send(json: ["type": "clipboard", "kind": "text", "text": text])
+        }
     }
 
     // MARK: messages from the laptop (on the server's queue)
@@ -109,11 +150,32 @@ final class AppModel: ObservableObject {
                 self.shortcuts = message.shortcuts ?? []
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
+            case "video_started":
+                if let width = message.width, let height = message.height {
+                    self.videoSize = CGSize(width: width, height: height)
+                }
+            case "clipboard":
+                self.receiveClipboard(message)
             case "error":
                 self.videoError = message.message
             default:
                 break
             }
         }
+    }
+
+    /// Something was copied on the laptop: put it on the iPad's clipboard.
+    private func receiveClipboard(_ message: LaptopMessage) {
+        let pasteboard = UIPasteboard.general
+        if message.kind == "text", let text = message.text {
+            pasteboard.string = text
+        } else if message.kind == "image", let png = message.png,
+                  let data = Data(base64Encoded: png), let image = UIImage(data: data) {
+            pasteboard.image = image
+        } else {
+            return
+        }
+        // our own write: don't send it straight back to the laptop
+        pasteboardSeen = pasteboard.changeCount
     }
 }

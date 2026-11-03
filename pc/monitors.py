@@ -66,6 +66,8 @@ class DEVMODEW(ctypes.Structure):
 
 
 DM_POSITION, DM_PELSWIDTH, DM_PELSHEIGHT = 0x20, 0x80000, 0x100000
+DM_DISPLAYORIENTATION = 0x80
+DMDO_DEFAULT, DMDO_90 = 0, 1
 CDS_UPDATEREGISTRY = 0x1
 DISP_CHANGE_SUCCESSFUL = 0
 
@@ -174,13 +176,17 @@ def set_scale(name, percent):
     return user32.DisplayConfigSetDeviceInfo(ctypes.byref(request)) == 0
 
 
-def configure(name, width, height, x, y):
-    """Set a display's resolution and its position on the desktop. True if it worked."""
+def configure(name, width, height, x, y, portrait=False):
+    """Set a display's resolution (as landscape width x height), position on the
+    desktop and orientation. Portrait rotates it, like Settings > Display >
+    Display orientation. True if it worked."""
     dm = DEVMODEW()
     dm.dmSize = ctypes.sizeof(dm)
-    dm.dmPelsWidth, dm.dmPelsHeight = width, height
+    # a rotated display reports its size already turned on its side
+    dm.dmPelsWidth, dm.dmPelsHeight = (height, width) if portrait else (width, height)
     dm.dmPositionX, dm.dmPositionY = x, y
-    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_POSITION
+    dm.dmDisplayOrientation = DMDO_90 if portrait else DMDO_DEFAULT
+    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_POSITION | DM_DISPLAYORIENTATION
     return user32.ChangeDisplaySettingsExW(name, ctypes.byref(dm), None,
                                            CDS_UPDATEREGISTRY, None) == DISP_CHANGE_SUCCESSFUL
 

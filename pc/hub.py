@@ -7,10 +7,16 @@ stream a screen (extend / mirror), run shortcuts from shortcuts.json, control me
 Wire format, both directions: [u8 type][u32 big-endian length][payload]
   type 1 = H.264 video (laptop -> iPad)
   type 2 = JSON message (both ways), always with a "type" field:
-    iPad -> laptop: start_video {mode}, stop_video, shortcut {id}, media {action}
+    iPad -> laptop: start_video {mode, portrait}, stop_video, orientation {portrait},
+                    shortcut {id}, media {action},
+                    touch {touches: [{id, x, y, state}]} (x/y are 0..1 of the image),
+                    key {usage, down} (HID usage), mouse_move {dx, dy},
+                    mouse_button {button, down}, scroll {dx, dy}, clipboard
     laptop -> iPad: hello {shortcuts}, video_started {width, height},
-                    now_playing {now_playing}, error {message}
+                    now_playing {now_playing}, error {message}, clipboard
+    clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
 """
+import base64
 import json
 import struct
 import threading
@@ -21,6 +27,8 @@ import numpy as np
 from windows_capture import WindowsCapture
 
 import actions
+import clipboard
+import inputs
 import layout
 import monitors
 import nowplaying
@@ -138,7 +146,64 @@ def send_now_playing(session):
             last = current
 
 
-def create_extend_screen(displays):
+class ClipboardSync:
+    """Sends whatever is copied on the laptop to the iPad, and puts what the iPad
+    sends on the laptop's clipboard (text and images)."""
+
+    def __init__(self, session):
+        self.session = session
+        self.ours = clipboard.sequence_number()  # don't send what was there before
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def _watch(self):
+        while not self.session.closed.wait(0.5):
+            seq = clipboard.sequence_number()
+            if seq == self.ours:
+                continue
+            self.ours = seq
+            content = clipboard.read()
+            if not content:
+                continue
+            kind, data = content
+            message = {"type": "clipboard", "kind": kind}
+            if kind == "text":
+                message["text"] = data
+            else:
+                message["png"] = base64.b64encode(data).decode()
+            try:
+                self.session.send_json(message)
+            except OSError:
+                return
+            print(f"clipboard -> iPad ({kind})")
+
+    def from_ipad(self, message):
+        try:
+            if message.get("kind") == "text":
+                clipboard.write_text(message["text"])
+            elif message.get("kind") == "image":
+                clipboard.write_image(base64.b64decode(message["png"]))
+            else:
+                return
+        except OSError as e:
+            print(f"clipboard from iPad failed: {e}")
+            return
+        # remember this change as ours, so it isn't echoed back to the iPad
+        self.ours = clipboard.sequence_number()
+        print(f"clipboard <- iPad ({message['kind']})")
+
+
+_touchscreen = None
+
+
+def touchscreen():
+    """Windows allows touch injection to be set up once per process."""
+    global _touchscreen
+    if _touchscreen is None:
+        _touchscreen = inputs.Touchscreen()
+    return _touchscreen
+
+
+def create_extend_screen(displays, portrait=False):
     """Plug in a new virtual screen, sized for the iPad, where the user put it last
     time in this setup (or right of the others the first time).
     Returns (driver index, screen name, setup key)."""
@@ -165,7 +230,7 @@ def create_extend_screen(displays):
         right = max(m["left"] + m["width"] for m in monitors.list_monitors()
                     if m["name"] != new["name"])
         position = (right, 0)
-    monitors.configure(new["name"], width, height, *position)
+    monitors.configure(new["name"], width, height, *position, portrait=portrait)
     # at 100% a 2360x1640 screen on 10.9" makes everything tiny
     monitors.set_scale(new["name"], EXTEND_SCALE)
     return index, new["name"], setup
@@ -214,13 +279,30 @@ def handle(session):
         {"id": s["id"], "title": s["title"], "icon": s["icon"]} for s in shortcuts]})
     threading.Thread(target=send_now_playing, args=(session,), daemon=True).start()
 
+    clip = ClipboardSync(session)
+    touch = touchscreen()
+
     video = None
+    streaming = None     # name of the screen being streamed, e.g. \\.\DISPLAY26
     displays = None      # Parsec driver connection, opened on the first Extend
     extend_index = None  # driver index of the screen we created for Extend
     extend_name = extend_setup = None
 
+    def capture(name):
+        """(Re)start streaming `name`, and aim touches at it."""
+        nonlocal video, streaming
+        wait_until_screens_settle()
+        video, monitor = start_capture(session, name)
+        streaming = name
+        touch.set_screen(monitor["left"], monitor["top"], monitor["width"], monitor["height"])
+        print(f"streaming {name} as monitor {monitor['index']} "
+              f"({monitor['width']}x{monitor['height']}, scale {monitors.get_scale(name)}%)")
+
     def stop_video():
-        nonlocal video, extend_index
+        nonlocal video, extend_index, streaming
+        touch.release_all()
+        inputs.release_all()
+        streaming = None
         if video:
             video.stop()
             video = None
@@ -230,35 +312,69 @@ def handle(session):
             displays.remove(extend_index)
             extend_index = None
 
-    def start_video(mode):
-        nonlocal displays, extend_index, extend_name, extend_setup, video
+    def start_video(mode, portrait):
+        nonlocal displays, extend_index, extend_name, extend_setup
         if mode == "extend":
             displays = displays or vdd.VirtualDisplays()
-            extend_index, extend_name, extend_setup = create_extend_screen(displays)
-            name = extend_name
+            extend_index, extend_name, extend_setup = create_extend_screen(displays, portrait)
+            capture(extend_name)
         else:
-            name = monitors.primary_monitor()["name"]
-        wait_until_screens_settle()
-        video, monitor = start_capture(session, name)
-        print(f"{mode}: streaming {name} as monitor {monitor['index']} "
-              f"({monitor['width']}x{monitor['height']}, scale {monitors.get_scale(name)}%)")
+            capture(monitors.primary_monitor()["name"])
+        print(f"{mode} started")
+
+    def rotate(portrait):
+        """The iPad turned: turn the Extend screen to match (Mirror can't rotate
+        the laptop's own screen, so it stays as it is)."""
+        nonlocal video
+        screen = next((m for m in monitors.list_monitors() if m["name"] == extend_name), None)
+        if extend_index is None or not screen or (screen["height"] > screen["width"]) == portrait:
+            return
+        touch.release_all()
+        video.stop()
+        video = None
+        long_side, short_side = max(screen["width"], screen["height"]), min(screen["width"], screen["height"])
+        monitors.configure(extend_name, long_side, short_side, screen["left"], screen["top"],
+                           portrait=portrait)
+        capture(extend_name)
+        print("rotated to", "portrait" if portrait else "landscape")
 
     # whatever goes wrong, remove the virtual screen and end the session cleanly:
     # otherwise the ping thread keeps the screen alive with nothing using it
     try:
         for msg in session.messages():
             kind = msg.get("type")
-            if kind in ("start_video", "stop_video"):
+            # input first: it is by far the most frequent message
+            if kind == "touch":
+                if streaming:
+                    touch.update(msg.get("touches", []))
+            elif kind == "key":
+                inputs.key(msg.get("usage"), bool(msg.get("down")))
+            elif kind == "mouse_move":
+                inputs.mouse_move(msg.get("dx", 0), msg.get("dy", 0))
+            elif kind == "mouse_button" and msg.get("button") in inputs.MOUSE_BUTTONS:
+                inputs.mouse_button(msg["button"], bool(msg.get("down")))
+            elif kind == "scroll":
+                inputs.scroll(msg.get("dx", 0), msg.get("dy", 0))
+            elif kind == "clipboard":
+                clip.from_ipad(msg)
+            elif kind in ("start_video", "stop_video"):
                 stop_video()
-            if kind == "start_video":
+                if kind == "start_video":
+                    try:
+                        start_video(msg.get("mode"), bool(msg.get("portrait")))
+                    except OSError as e:  # includes vdd.DriverNotFound
+                        print(f"{msg.get('mode')} failed: {e}")
+                        stop_video()
+                        session.send_json({"type": "error", "message": f"Could not start: {e}"})
+                else:
+                    print("video stopped")
+            elif kind == "orientation":
                 try:
-                    start_video(msg.get("mode"))
-                except OSError as e:  # includes vdd.DriverNotFound
-                    print(f"{msg.get('mode')} failed: {e}")
+                    rotate(bool(msg.get("portrait")))
+                except OSError as e:
+                    print(f"rotating failed: {e}")
                     stop_video()
-                    session.send_json({"type": "error", "message": f"Could not start: {e}"})
-            elif kind == "stop_video":
-                print("video stopped")
+                    session.send_json({"type": "error", "message": f"Could not rotate: {e}"})
             elif kind == "shortcut" and msg.get("id") in by_id:
                 print(f"shortcut: {msg['id']}")
                 try:
@@ -276,35 +392,58 @@ def handle(session):
         session.close()
 
 
-def wait_for_ipad():
-    """Block until an iPad is plugged in with the app open; return the socket."""
+def wait_for_ipad(stop, on_status):
+    """Block until an iPad is plugged in with the app open; return the socket,
+    or None if `stop` gets set first."""
     waiting_for = None
-    while True:
-        devices = usbmux.list_devices()
-        if not devices:
-            reason = "No iPad over USB: plug it in, unlock it, tap 'Trust'."
-        else:
+    while not stop.is_set():
+        try:
+            devices = usbmux.list_devices()
+        except OSError:
+            devices, reason = None, "Apple's USB service isn't running (install Apple Devices or iTunes)."
+        if devices == []:
+            reason = "Plug in the iPad, unlock it and tap 'Trust'."
+        elif devices:
             try:
                 return usbmux.connect(devices[0]["DeviceID"], PORT)
             except usbmux.UsbmuxError:
                 reason = "iPad found. Open the Extend Display app on it."
         if reason != waiting_for:
-            print(reason)
+            on_status(reason)
             waiting_for = reason
-        time.sleep(1)
+        stop.wait(1)
+    return None
+
+
+def run(stop, on_status=print):
+    """Serve the iPad until `stop` is set. on_status gets short status texts."""
+    while not stop.is_set():
+        sock = wait_for_ipad(stop, on_status)
+        if sock is None:
+            return
+        session = Session(sock)
+        on_status("iPad connected.")
+        # the reader runs in a thread so the wait below can notice `stop` and Ctrl+C
+        worker = threading.Thread(target=handle, args=(session,), daemon=True)
+        worker.start()
+        try:
+            while not session.closed.wait(0.2) and not stop.is_set():
+                pass
+        finally:
+            # closing the socket ends handle(), which saves the layout and
+            # removes the virtual screen
+            session.close()
+            worker.join(timeout=5)
+        on_status("iPad disconnected.")
 
 
 def main():
+    stop = threading.Event()
+    print("Extend Display hub. Ctrl+C to quit.")
     try:
-        while True:
-            session = Session(wait_for_ipad())
-            print("iPad connected. Ctrl+C to quit.")
-            # the reader runs in a thread so Ctrl+C still works while it waits on the socket
-            threading.Thread(target=handle, args=(session,), daemon=True).start()
-            while not session.closed.wait(0.2):
-                pass
-            print("iPad disconnected.")
+        run(stop)
     except KeyboardInterrupt:
+        stop.set()
         print("Stopped.")
 
 

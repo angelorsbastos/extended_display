@@ -28,8 +28,8 @@ struct HomeView: View {
             .opacity(model.connected ? 1 : 0.4)
 
             if !model.connected {
-                Text(model.listenError ?? "Plug the iPad into the laptop and run  python pc/hub.py")
-                    .font(.body.monospaced())
+                Text(model.listenError ?? "Plug the iPad into the laptop and open Extend Display there.")
+                    .font(.body)
                     .foregroundStyle(.secondary)
             }
             Spacer()
