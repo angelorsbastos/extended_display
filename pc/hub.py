@@ -48,6 +48,7 @@ import controls
 import discovery
 import files
 import inputs
+import ipad_control
 import layout
 import monitors
 import nowplaying
@@ -692,7 +693,8 @@ def serve(session, on_status, pairing_paused_until):
         on_status("The iPad no longer knows this laptop (app reinstalled?). Pairing again…")
         session.close()
         return
-    except (OSError, ValueError, KeyError, secure.PairingFailed) as e:
+    except (OSError, EOFError, ValueError, KeyError, secure.PairingFailed) as e:
+        # EOFError: the iPad closed the connection halfway through (e.g. app closed)
         on_status(f"Couldn't connect over {how}: {e or type(e).__name__}")
         session.close()
         return
@@ -713,6 +715,10 @@ def run(stop, on_status=print):
         files.serve_outbox()  # "Send to > iPad" in Explorer
     except OSError as e:
         print(f"Send to iPad unavailable: {e}")
+    try:
+        ipad_control.Controller()  # Ctrl+Alt+I: keyboard and trackpad -> iPad, over Bluetooth
+    except Exception as e:  # missing Bluetooth libraries, no Tk...: the rest still works
+        print(f"Controlling the iPad from the laptop is unavailable: {e!r}")
     try:
         while not stop.is_set():
             session = wait_for_ipad(stop, on_status, browser, pairing_paused_until)
