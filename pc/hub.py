@@ -551,8 +551,7 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
                                 f"({e}). On the iPad, check Settings > Privacy & Security > "
                                 "Local Network > Extend Display.")
                 continue
-            sock.settimeout(None)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            network_socket(sock)
             on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
             return Session(sock, "wifi")
 
@@ -570,8 +569,7 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
                 remote_problem = (f"{peer['name']} is online in Tailscale but didn't answer ({e}). "
                                   "Is Extend Display open on it?")
                 continue
-            sock.settimeout(None)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            network_socket(sock)
             on_status(f"Found {peer['name']} through Tailscale, connecting…")
             return Session(sock, "remote")
 
@@ -585,6 +583,19 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
             waiting_for = reason
         stop.wait(1)
     return None
+
+
+def network_socket(sock):
+    """Settings for a Wi-Fi/Tailscale connection. If the app is closed or the iPad drops
+    off the network, its goodbye can get lost, and without keepalive the hub would wait
+    on the dead connection forever. Keepalive probes a quiet link every 2 s after 5 s,
+    and gives up after 3 missed answers."""
+    sock.settimeout(None)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    sock.ioctl(socket.SIO_KEEPALIVE_VALS, (1, 5000, 2000))
+    if hasattr(socket, "TCP_KEEPCNT"):
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # Windows default is 10
 
 
 def set_up_link(session, on_status, pairing_paused_until):
