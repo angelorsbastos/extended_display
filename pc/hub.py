@@ -23,11 +23,13 @@ import actions
 import monitors
 import nowplaying
 import usbmux
+import vdd
 from encoder import FPS, make_encoder, make_frame
 
 PORT = 7000
 MSG_VIDEO = 1
 MSG_JSON = 2
+IPAD_SIZE = (2360, 1640)  # iPad 10 screen; offered once ipad-resolution.reg is imported
 
 
 class Session:
@@ -131,6 +133,33 @@ def send_now_playing(session):
             last = current
 
 
+def create_extend_screen(displays):
+    """Plug in a new virtual screen, sized for the iPad and placed right of the others.
+    Returns (driver index, monitor dict)."""
+    before = {m["name"] for m in monitors.list_monitors()}
+    index = displays.add()
+    for _ in range(50):
+        new = next((m for m in monitors.list_monitors() if m["name"] not in before), None)
+        if new:
+            break
+        time.sleep(0.1)
+    else:
+        displays.remove(index)
+        raise OSError("Windows did not show the new virtual screen")
+
+    if IPAD_SIZE in monitors.available_modes(new["name"]):
+        width, height = IPAD_SIZE
+    else:
+        width, height = new["width"], new["height"]
+        print(f"iPad resolution not available, using {width}x{height}: "
+              "import pc/ipad-resolution.reg to fix")
+    right = max(m["left"] + m["width"] for m in monitors.list_monitors()
+                if m["name"] != new["name"])
+    monitors.configure(new["name"], width, height, right, 0)
+    time.sleep(0.5)  # let Windows apply the mode before capturing
+    return index, next(m for m in monitors.list_monitors() if m["name"] == new["name"])
+
+
 def handle(session):
     shortcuts = actions.load_shortcuts()
     by_id = {s["id"]: s for s in shortcuts}
@@ -139,18 +168,32 @@ def handle(session):
     threading.Thread(target=send_now_playing, args=(session,), daemon=True).start()
 
     video = None
-    for msg in session.messages():
-        kind = msg.get("type")
-        if kind in ("start_video", "stop_video") and video:
+    displays = None      # Parsec driver connection, opened on the first Extend
+    extend_index = None  # driver index of the screen we created for Extend
+
+    def stop_video():
+        nonlocal video, extend_index
+        if video:
             video.stop()
             video = None
+        if extend_index is not None:
+            displays.remove(extend_index)
+            extend_index = None
+
+    for msg in session.messages():
+        kind = msg.get("type")
+        if kind in ("start_video", "stop_video"):
+            stop_video()
         if kind == "start_video":
-            monitor = monitors.monitor_for_mode(msg.get("mode"))
-            if monitor is None:
-                session.send_json({"type": "error", "message":
-                                   "No second display on the laptop. Install a virtual display "
-                                   "driver, or use Mirror."})
-                continue
+            if msg.get("mode") == "extend":
+                try:
+                    displays = displays or vdd.VirtualDisplays()
+                    extend_index, monitor = create_extend_screen(displays)
+                except OSError as e:  # includes vdd.DriverNotFound
+                    session.send_json({"type": "error", "message": f"Could not create a screen: {e}"})
+                    continue
+            else:
+                monitor = monitors.primary_monitor()
             print(f"{msg['mode']}: streaming monitor {monitor['index']} "
                   f"({monitor['width']}x{monitor['height']})")
             session.send_json({"type": "video_started",
@@ -163,8 +206,10 @@ def handle(session):
             actions.run_shortcut(by_id[msg["id"]])
         elif kind == "media" and msg.get("action") in actions.MEDIA_KEYS:
             actions.media(msg["action"])
-    if video:
-        video.stop()
+
+    stop_video()
+    if displays:
+        displays.close()
     session.close()
 
 
