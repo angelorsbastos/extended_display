@@ -8,3 +8,6 @@ ipad/*.xcodeproj/
 ipad/ExtendDisplay/Info.plist
 ipad/build/
 *.ipa
+
+# where the Extend screen was last placed, per setup (personal)
+pc/extend_layout.json
