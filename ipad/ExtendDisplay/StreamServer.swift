@@ -153,7 +153,8 @@ final class StreamServer {
     }
 
     private func accept(_ connection: NWConnection, _ transport: Transport) {
-        let link = Link(connection, transport)
+        let viaTailscale = transport == .wifi && Self.isTailscale(connection.endpoint)
+        let link = Link(connection, viaTailscale ? .remote : transport)
         connection.start(queue: queue)
         sendJSON(["type": "identity", "ipad_id": PairingStore.ipadId, "ipad_name": deviceName,
                   "paired_laptops": PairingStore.laptopIds], on: link)
@@ -161,6 +162,13 @@ final class StreamServer {
             activate(link)
         }
         readHeader(link)
+    }
+
+    /// Tailscale gives devices addresses in 100.64.0.0/10.
+    private static func isTailscale(_ endpoint: NWEndpoint) -> Bool {
+        guard case .hostPort(let host, _) = endpoint, case .ipv4(let address) = host else { return false }
+        let bytes = [UInt8](address.rawValue)
+        return bytes.count == 4 && bytes[0] == 100 && (bytes[1] & 0xC0) == 64
     }
 
     /// Only one laptop connection at a time: a newly ready one replaces the old one.

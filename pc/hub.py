@@ -45,6 +45,7 @@ import layout
 import monitors
 import nowplaying
 import secure
+import tailnet
 import usbmux
 import vdd
 from encoder import FPS, make_encoder, make_frame
@@ -54,8 +55,10 @@ MSG_VIDEO = 1
 MSG_JSON = 2
 MSG_SEALED = 3
 # Wi-Fi bandwidth is less steady than the cable's; less data means less stutter
-BIT_RATE = {"usb": 15_000_000, "wifi": 8_000_000}
+BIT_RATE = {"usb": 15_000_000, "wifi": 8_000_000, "remote": 5_000_000}  # remote: home upload
 WIFI_PAIRING_RETRY = 60  # seconds before offering pairing again after a cancel
+REMOTE_RETRY = 15  # seconds between attempts to reach the iPad through Tailscale
+IPAD_WIFI_PORT = 7001  # the iPad's encrypted port (Bonjour tells it on the local network)
 IPAD_SIZE = (2360, 1640)  # iPad 10 screen; offered once ipad-resolution.reg is imported
 # Windows scale for the Extend screen. 200% shows things at the size iPadOS itself
 # uses; try 175 for more room or 225 for bigger text.
@@ -553,10 +556,30 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
             on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
             return Session(sock, "wifi")
 
+        # away from home: through Tailscale (only when nothing local works)
+        remote_problem = None
+        peers, remote_problem = tailnet.ipads()
+        for peer in peers:
+            key = f"remote {peer['address']}"
+            if pairing_paused_until.get(key, 0) > time.time():
+                continue  # it just failed (e.g. not paired yet); don't retry every second
+            pairing_paused_until[key] = time.time() + REMOTE_RETRY
+            try:
+                sock = socket.create_connection((peer["address"], IPAD_WIFI_PORT), timeout=5)
+            except OSError as e:
+                remote_problem = (f"{peer['name']} is online in Tailscale but didn't answer ({e}). "
+                                  "Is Extend Display open on it?")
+                continue
+            sock.settimeout(None)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            on_status(f"Found {peer['name']} through Tailscale, connecting…")
+            return Session(sock, "remote")
+
         searching = ", ".join(browser.networks) if browser else "nothing (no network)"
         reason = usb_problem or wifi_problem or (
             "Looking for the iPad: plug in the cable, or open Extend Display on the same Wi-Fi "
-            f"(searching on {searching}; guest networks usually block this).")
+            f"(searching on {searching}; guest networks usually block this)."
+            + (f" Remote: {remote_problem}." if remote_problem else ""))
         if reason != waiting_for:
             on_status(reason)
             waiting_for = reason
@@ -567,11 +590,11 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
 def set_up_link(session, on_status, pairing_paused_until):
     """Before the normal conversation: learn who the iPad is, pair if needed, and on
     Wi-Fi log in and switch to encryption. Raises if the link can't be trusted."""
-    session.sock.settimeout(3)
+    session.sock.settimeout(3 if session.transport != "remote" else 10)  # internet is slower
     try:
         identity = session.recv_json()
     except socket.timeout:
-        if session.transport == "wifi":
+        if session.transport != "usb":
             raise
         identity = None  # an app version from before Wi-Fi support: the cable is enough
     if identity is not None and identity.get("type") != "identity":
@@ -586,6 +609,10 @@ def set_up_link(session, on_status, pairing_paused_until):
                 secure.pair_over_usb(session, identity)
                 on_status(f"Paired with {name} through the cable; Wi-Fi works now too.")
         else:
+            if key is None and session.transport == "remote":
+                # nobody is at the laptop to read a pairing code
+                raise secure.PairingFailed(f"{name} isn't paired with this laptop yet. Pair it once at "
+                                           "home: plug in the cable, or use the same Wi-Fi.")
             if key is None:
                 on_status(f"Pairing with {name}: type the code shown on the laptop.")
                 session.sock.settimeout(120)  # the user is typing
@@ -602,7 +629,7 @@ def set_up_link(session, on_status, pairing_paused_until):
 
 
 def serve(session, on_status, pairing_paused_until):
-    how = "the cable" if session.transport == "usb" else "Wi-Fi"
+    how = {"usb": "the cable", "wifi": "Wi-Fi", "remote": "Tailscale (remote)"}[session.transport]
     try:
         set_up_link(session, on_status, pairing_paused_until)
     except secure.NeedsPairing:
