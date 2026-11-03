@@ -522,30 +522,41 @@ def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
     or Wi-Fi; return a Session, or None if `stop` gets set first."""
     waiting_for = None
     while not stop.is_set():
+        usb_problem = None
         try:
             devices = usbmux.list_devices()
         except OSError:
-            devices, reason = None, "Apple's USB service isn't running (install Apple Devices or iTunes)."
-        if devices == []:
-            reason = "Plug in the iPad, or open Extend Display on it on the same Wi-Fi."
-        elif devices:
+            devices, usb_problem = [], "Apple's USB service isn't running (install Apple Devices or iTunes)."
+        if devices:
             try:
                 return Session(usbmux.connect(devices[0]["DeviceID"], PORT), "usb")
             except usbmux.UsbmuxError:
-                reason = "iPad found. Open the Extend Display app on it."
+                usb_problem = "iPad plugged in. Open the Extend Display app on it."
 
+        # explain the Wi-Fi side as precisely as possible: the user can't see it otherwise
+        wifi_problem = None
         for ipad in browser.ipads() if browser else []:
             unpaired = secure.key_for(ipad["id"]) is None
-            if unpaired and pairing_paused_until.get(ipad["id"], 0) > time.time():
-                continue  # pairing was just cancelled; don't pop it up again right away
+            wait = pairing_paused_until.get(ipad["id"], 0) - time.time()
+            if unpaired and wait > 0:  # pairing was just cancelled; don't pop it up right away
+                wifi_problem = f"{ipad['name']}: pairing didn't finish. Offering it again in {int(wait) + 1} s."
+                continue
             try:
                 sock = socket.create_connection((ipad["address"], ipad["port"]), timeout=3)
-            except OSError:
+            except OSError as e:
+                wifi_problem = (f"Found {ipad['name']} on Wi-Fi at {ipad['address']} but couldn't connect "
+                                f"({e}). On the iPad, check Settings > Privacy & Security > "
+                                "Local Network > Extend Display.")
                 continue
             sock.settimeout(None)
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
             return Session(sock, "wifi")
 
+        searching = ", ".join(browser.networks) if browser else "nothing (no network)"
+        reason = usb_problem or wifi_problem or (
+            "Looking for the iPad: plug in the cable, or open Extend Display on the same Wi-Fi "
+            f"(searching on {searching}; guest networks usually block this).")
         if reason != waiting_for:
             on_status(reason)
             waiting_for = reason
@@ -591,20 +602,26 @@ def set_up_link(session, on_status, pairing_paused_until):
 
 
 def serve(session, on_status, pairing_paused_until):
+    how = "the cable" if session.transport == "usb" else "Wi-Fi"
     try:
         set_up_link(session, on_status, pairing_paused_until)
-    except (OSError, ValueError, KeyError, secure.PairingFailed, secure.NeedsPairing) as e:
-        print(f"{session.transport} connection not used: {e or type(e).__name__}")
+    except secure.NeedsPairing:
+        on_status("The iPad no longer knows this laptop (app reinstalled?). Pairing again…")
         session.close()
         return
-    on_status(f"iPad connected ({'cable' if session.transport == 'usb' else 'Wi-Fi'}).")
+    except (OSError, ValueError, KeyError, secure.PairingFailed) as e:
+        on_status(f"Couldn't connect over {how}: {e or type(e).__name__}")
+        session.close()
+        return
+    session.ready = True
+    on_status(f"iPad connected over {how}.")
     handle(session)
 
 
 def run(stop, on_status=print):
     """Serve the iPad until `stop` is set. on_status gets short status texts."""
     try:
-        browser = discovery.Browser()
+        browser = discovery.Watcher()
     except OSError as e:  # e.g. no network at all: the cable still works
         print(f"Wi-Fi discovery unavailable: {e}")
         browser = None
@@ -627,7 +644,8 @@ def run(stop, on_status=print):
                 # removes the virtual screen
                 session.close()
                 worker.join(timeout=5)
-            on_status("iPad disconnected.")
+            if getattr(session, "ready", False):
+                on_status("iPad disconnected.")
     finally:
         if browser:
             browser.close()

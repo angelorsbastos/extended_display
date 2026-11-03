@@ -21,6 +21,10 @@ final class AppModel: ObservableObject {
     @Published var pairingLaptop: String?
     /// The outcome of the last pairing, shown on the home screen.
     @Published var pairingMessage: String?
+    /// What the Wi-Fi side is doing, and this iPad's addresses, for the home screen.
+    @Published var wifiState: StreamServer.WifiState = .starting
+    @Published var addresses: [String] = []
+    @Published var pairedLaptops = 0
     @Published var screen: Screen = .home
     @Published var shortcuts: [Shortcut] = []
     @Published var nowPlaying: NowPlaying?
@@ -75,8 +79,16 @@ final class AppModel: ObservableObject {
             DispatchQueue.main.async {
                 self?.pairingLaptop = nil
                 self?.pairingMessage = problem ?? "Paired. The laptop now connects over Wi-Fi too."
+                self?.refreshNetworkInfo()
             }
         }
+        server.onWifiState = { [weak self] state in
+            DispatchQueue.main.async {
+                self?.wifiState = state
+                self?.refreshNetworkInfo()
+            }
+        }
+        refreshNetworkInfo()
         server.onDisconnected = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -157,8 +169,14 @@ final class AppModel: ObservableObject {
         server.cancelPairing()
     }
 
+    func refreshNetworkInfo() {
+        addresses = NetworkInfo.addresses()
+        pairedLaptops = PairingStore.laptopIds.count
+    }
+
     /// The app is in front again (SceneDelegate).
     func appBecameActive() {
+        refreshNetworkInfo()  // e.g. joined another Wi-Fi meanwhile
         sendClipboardIfChanged()
         // the decoder may have been shut down while we were away; a keyframe
         // brings the picture back even if nothing on the laptop screen changes
