@@ -105,6 +105,11 @@ final class AppModel: ObservableObject {
         server.send(json: ["type": "media", "action": action])
     }
 
+    /// A line for the laptop's log (pc/hub.log), for diagnosing problems.
+    func log(_ text: String) {
+        server.send(json: ["type": "log", "text": text])
+    }
+
     /// Fingers on the video, as fractions of the laptop screen (see VideoView).
     func touches(_ touches: [[String: Any]]) {
         server.send(json: ["type": "touch", "touches": touches])

@@ -11,7 +11,8 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     shortcut {id}, media {action},
                     touch {touches: [{id, x, y, state}]} (x/y are 0..1 of the image),
                     key {usage, down} (HID usage), mouse_move {dx, dy},
-                    mouse_button {button, down}, scroll {dx, dy}, clipboard
+                    mouse_button {button, down}, scroll {dx, dy}, clipboard,
+                    log {text} (diagnostics, printed to the hub's log)
     laptop -> iPad: hello {shortcuts}, video_started {width, height},
                     now_playing {now_playing}, error {message}, clipboard
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
@@ -357,6 +358,8 @@ def handle(session):
                 inputs.scroll(msg.get("dx", 0), msg.get("dy", 0))
             elif kind == "clipboard":
                 clip.from_ipad(msg)
+            elif kind == "log":
+                print(f"iPad: {msg.get('text')}")
             elif kind in ("start_video", "stop_video"):
                 stop_video()
                 if kind == "start_video":
