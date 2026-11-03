@@ -9,7 +9,7 @@ enum Screen: Equatable {
     case home
     case video(VideoMode)
     case shortcuts
-    case media
+    case controls
 }
 
 /// App state, shared by all screens. Published properties change on the main thread only.
@@ -18,6 +18,9 @@ final class AppModel: ObservableObject {
     @Published var screen: Screen = .home
     @Published var shortcuts: [Shortcut] = []
     @Published var nowPlaying: NowPlaying?
+    /// Changed by the laptop's updates, and right away by the Controls screen
+    /// (so a switch flips instantly instead of after the next update).
+    @Published var controls: ControlsState?
     @Published var receivingVideo = false
     @Published var videoError: String?
     @Published var listenError: String?
@@ -58,6 +61,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.connected = false
                 self.nowPlaying = nil
+                self.controls = nil
                 if case .video = self.screen {
                     self.goHome()
                 }
@@ -83,6 +87,11 @@ final class AppModel: ObservableObject {
 
     func open(_ screen: Screen) {
         self.screen = screen
+        if screen == .controls {
+            videoError = nil
+            // the laptop sends its settings every 2 s while this screen is open
+            server.send(json: ["type": "watch_controls", "on": true])
+        }
         if case .video(let mode) = screen {
             receivingVideo = false
             videoError = nil
@@ -93,6 +102,9 @@ final class AppModel: ObservableObject {
     }
 
     func goHome() {
+        if screen == .controls {
+            server.send(json: ["type": "watch_controls", "on": false])
+        }
         if case .video = screen {
             server.send(json: ["type": "stop_video"])
             displayLayer.flushAndRemoveImage()
@@ -108,6 +120,11 @@ final class AppModel: ObservableObject {
 
     func media(_ action: String) {
         server.send(json: ["type": "media", "action": action])
+    }
+
+    /// Change a laptop setting or run a power action; see pc/controls.py apply().
+    func control(_ name: String, _ value: Any = true) {
+        server.send(json: ["type": "control", "name": name, "value": value])
     }
 
     /// The app is in front again (SceneDelegate).
@@ -178,6 +195,8 @@ final class AppModel: ObservableObject {
                 self.shortcuts = message.shortcuts ?? []
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
+            case "controls":
+                self.controls = message.controls
             case "video_started":
                 if let width = message.width, let height = message.height {
                     self.videoSize = CGSize(width: width, height: height)

@@ -13,9 +13,11 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     key {usage, down} (HID usage), mouse_move {dx, dy},
                     mouse_button {button, down}, scroll {dx, dy}, clipboard,
                     log {text} (diagnostics, printed to the hub's log),
-                    keyframe (re-send the current picture as a full keyframe)
+                    keyframe (re-send the current picture as a full keyframe),
+                    watch_controls {on}, control {name, value} (see controls.apply)
     laptop -> iPad: hello {shortcuts}, video_started {width, height},
-                    now_playing {now_playing}, error {message}, clipboard
+                    now_playing {now_playing}, error {message}, clipboard,
+                    controls {controls} (see controls.state)
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
 """
 import base64
@@ -31,6 +33,7 @@ from windows_capture import WindowsCapture
 
 import actions
 import clipboard
+import controls
 import inputs
 import layout
 import monitors
@@ -214,6 +217,35 @@ class ClipboardSync:
         print(f"clipboard <- iPad ({message['kind']})")
 
 
+class ControlsWatch:
+    """While the iPad shows its Controls screen, keep it up to date with the
+    laptop's volume, brightness, Wi-Fi, ... (every 2 s, and right after a change)."""
+
+    def __init__(self, session):
+        self.session = session
+        self.on = threading.Event()
+        self.refresh = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def watch(self, on):
+        if on:
+            self.on.set()
+            self.refresh.set()
+        else:
+            self.on.clear()
+
+    def _run(self):
+        while not self.session.closed.is_set():
+            if not self.on.wait(0.5):
+                continue
+            try:
+                self.session.send_json({"type": "controls", "controls": controls.state()})
+            except OSError:
+                return
+            self.refresh.wait(2)
+            self.refresh.clear()
+
+
 _touchscreen = None
 
 
@@ -302,6 +334,7 @@ def handle(session):
     threading.Thread(target=send_now_playing, args=(session,), daemon=True).start()
 
     clip = ClipboardSync(session)
+    controls_watch = ControlsWatch(session)
     touch = touchscreen()
 
     video = None
@@ -384,6 +417,16 @@ def handle(session):
             elif kind == "keyframe":
                 if video:
                     video.keyframe()
+            elif kind == "watch_controls":
+                controls_watch.watch(bool(msg.get("on")))
+            elif kind == "control":
+                print(f"control: {msg.get('name')} = {msg.get('value')}")
+                try:
+                    controls.apply(msg.get("name"), msg.get("value"))
+                except Exception as e:  # COM, WMI and WinRT each raise their own errors
+                    print(f"control {msg.get('name')} failed: {e}")
+                    session.send_json({"type": "error", "message": f"Couldn't change that: {e}"})
+                controls_watch.refresh.set()
             elif kind in ("start_video", "stop_video"):
                 stop_video()
                 if kind == "start_video":

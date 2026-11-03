@@ -6,3 +6,6 @@ winrt-Windows.Media.Control
 winrt-Windows.Foundation
 pystray
 pillow
+pycaw
+screen-brightness-control
+winrt-Windows.Devices.Radios
