@@ -15,6 +15,7 @@ import json
 import struct
 import threading
 import time
+import traceback
 
 import numpy as np
 from windows_capture import WindowsCapture
@@ -156,8 +157,43 @@ def create_extend_screen(displays):
     right = max(m["left"] + m["width"] for m in monitors.list_monitors()
                 if m["name"] != new["name"])
     monitors.configure(new["name"], width, height, right, 0)
-    time.sleep(0.5)  # let Windows apply the mode before capturing
-    return index, next(m for m in monitors.list_monitors() if m["name"] == new["name"])
+    return index, new["name"]
+
+
+def wait_until_screens_settle(timeout=4):
+    """After a screen is added or changed, Windows may rearrange and renumber the
+    screens for a moment (the first time a layout is seen). Wait until the list
+    has stayed the same for half a second."""
+    last, stable_since = None, time.time()
+    end = time.time() + timeout
+    while time.time() < end:
+        now = monitors.list_monitors()
+        if now != last:
+            last, stable_since = now, time.time()
+        elif time.time() - stable_since >= 0.5:
+            return
+        time.sleep(0.1)
+
+
+def start_capture(session, name, attempts=5):
+    """Start streaming the screen called `name` (e.g. '\\\\.\\DISPLAY26').
+    Capture is opened by number, and numbers can shift while Windows rearranges
+    screens, so the number is looked up right before each attempt."""
+    error = None
+    for _ in range(attempts):
+        monitor = next((m for m in monitors.list_monitors() if m["name"] == name), None)
+        if monitor:
+            # must reach the iPad before the first frame: it resets the decoder,
+            # and the first frame carries the keyframe the decoder needs
+            session.send_json({"type": "video_started",
+                               "width": monitor["width"], "height": monitor["height"]})
+            try:
+                return VideoStream(session, monitor["index"]), monitor
+            except Exception as e:  # windows_capture raises a plain Exception
+                error = e
+                print(f"capture of {name} failed, retrying: {e}")
+        time.sleep(0.3)
+    raise OSError(f"could not capture {name}: {error}")
 
 
 def handle(session):
@@ -180,37 +216,49 @@ def handle(session):
             displays.remove(extend_index)
             extend_index = None
 
-    for msg in session.messages():
-        kind = msg.get("type")
-        if kind in ("start_video", "stop_video"):
-            stop_video()
-        if kind == "start_video":
-            if msg.get("mode") == "extend":
-                try:
-                    displays = displays or vdd.VirtualDisplays()
-                    extend_index, monitor = create_extend_screen(displays)
-                except OSError as e:  # includes vdd.DriverNotFound
-                    session.send_json({"type": "error", "message": f"Could not create a screen: {e}"})
-                    continue
-            else:
-                monitor = monitors.primary_monitor()
-            print(f"{msg['mode']}: streaming monitor {monitor['index']} "
-                  f"({monitor['width']}x{monitor['height']})")
-            session.send_json({"type": "video_started",
-                               "width": monitor["width"], "height": monitor["height"]})
-            video = VideoStream(session, monitor["index"])
-        elif kind == "stop_video":
-            print("video stopped")
-        elif kind == "shortcut" and msg.get("id") in by_id:
-            print(f"shortcut: {msg['id']}")
-            actions.run_shortcut(by_id[msg["id"]])
-        elif kind == "media" and msg.get("action") in actions.MEDIA_KEYS:
-            actions.media(msg["action"])
+    def start_video(mode):
+        nonlocal displays, extend_index, video
+        if mode == "extend":
+            displays = displays or vdd.VirtualDisplays()
+            extend_index, name = create_extend_screen(displays)
+        else:
+            name = monitors.primary_monitor()["name"]
+        wait_until_screens_settle()
+        video, monitor = start_capture(session, name)
+        print(f"{mode}: streaming {name} as monitor {monitor['index']} "
+              f"({monitor['width']}x{monitor['height']})")
 
-    stop_video()
-    if displays:
-        displays.close()
-    session.close()
+    # whatever goes wrong, remove the virtual screen and end the session cleanly:
+    # otherwise the ping thread keeps the screen alive with nothing using it
+    try:
+        for msg in session.messages():
+            kind = msg.get("type")
+            if kind in ("start_video", "stop_video"):
+                stop_video()
+            if kind == "start_video":
+                try:
+                    start_video(msg.get("mode"))
+                except OSError as e:  # includes vdd.DriverNotFound
+                    print(f"{msg.get('mode')} failed: {e}")
+                    stop_video()
+                    session.send_json({"type": "error", "message": f"Could not start: {e}"})
+            elif kind == "stop_video":
+                print("video stopped")
+            elif kind == "shortcut" and msg.get("id") in by_id:
+                print(f"shortcut: {msg['id']}")
+                try:
+                    actions.run_shortcut(by_id[msg["id"]])
+                except OSError as e:  # e.g. the app it opens isn't installed
+                    print(f"shortcut {msg['id']} failed: {e}")
+            elif kind == "media" and msg.get("action") in actions.MEDIA_KEYS:
+                actions.media(msg["action"])
+    except Exception:
+        traceback.print_exc()
+    finally:
+        stop_video()
+        if displays:
+            displays.close()
+        session.close()
 
 
 def wait_for_ipad():
