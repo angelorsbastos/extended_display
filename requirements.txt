@@ -11,3 +11,6 @@ winrt-Windows.Devices.Radios
 cryptography
 zeroconf
 soundcard
+winrt-Windows.Devices.Bluetooth
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile
+winrt-Windows.Storage.Streams
