@@ -1,3 +1,6 @@
 av
 numpy
 windows-capture
+winrt-runtime
+winrt-Windows.Media.Control
+winrt-Windows.Foundation

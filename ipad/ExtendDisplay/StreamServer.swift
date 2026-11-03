@@ -1,17 +1,16 @@
 import Foundation
 import Network
 
-/// Listens for the PC streamer. The PC reaches this port through the USB cable
+/// Listens for the laptop. The laptop reaches this port through the USB cable
 /// (usbmux forwards its connection to the iPad's localhost).
-///
-/// Wire format, PC -> iPad: [u8 type][u32 big-endian length][payload]
+/// All callbacks run on the server's own queue, not the main thread.
 final class StreamServer {
     static let port: UInt16 = 7000
-    static let msgVideo: UInt8 = 1
 
     var onConnected: (() -> Void)?
     var onDisconnected: (() -> Void)?
     var onVideo: ((Data) -> Void)?
+    var onMessage: ((LaptopMessage) -> Void)?
 
     private let queue = DispatchQueue(label: "stream-server")
     private var listener: NWListener?
@@ -27,8 +26,21 @@ final class StreamServer {
         self.listener = listener
     }
 
+    /// Send a JSON message to the laptop (ignored when it isn't connected).
+    func send(json object: [String: Any]) {
+        guard let body = try? JSONSerialization.data(withJSONObject: object) else { return }
+        let n = UInt32(body.count)
+        var frame = Data([MessageType.json.rawValue,
+                          UInt8(truncatingIfNeeded: n >> 24), UInt8(truncatingIfNeeded: n >> 16),
+                          UInt8(truncatingIfNeeded: n >> 8), UInt8(truncatingIfNeeded: n)])
+        frame.append(body)
+        queue.async { [weak self] in
+            self?.connection?.send(content: frame, completion: .contentProcessed { _ in })
+        }
+    }
+
     private func accept(_ conn: NWConnection) {
-        // only one PC at a time: a new connection replaces the old one
+        // only one laptop at a time: a new connection replaces the old one
         connection?.cancel()
         connection = conn
         conn.start(queue: queue)
@@ -54,8 +66,15 @@ final class StreamServer {
                 self?.close(conn)
                 return
             }
-            if type == Self.msgVideo {
+            switch MessageType(rawValue: type) {
+            case .video:
                 self.onVideo?(data)
+            case .json:
+                if let message = LaptopMessage.decode(data) {
+                    self.onMessage?(message)
+                }
+            case nil:
+                break
             }
             self.readHeader(conn)
         }
