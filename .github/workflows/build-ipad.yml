@@ -1,6 +1,8 @@
-# Builds the iPad app on GitHub's free macOS machines (no Mac needed).
-# The result is an unsigned .ipa; SideStore signs it with your free Apple ID.
-# Download it from the run's "Artifacts" section on GitHub.
+# Builds the iPad app on GitHub's free macOS machines (no Mac needed) and
+# publishes it as a GitHub Release, together with source.json.
+# SideStore follows that source, so each push shows up on the iPad as
+# "Update available". Source URL to add in SideStore:
+#   https://github.com/angelorsbastos/extended_display/releases/latest/download/source.json
 name: Build iPad app
 
 on:
@@ -9,12 +11,18 @@ on:
     paths: ["ipad/**", ".github/workflows/build-ipad.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: write  # to create releases
+
 jobs:
   build:
     runs-on: macos-15
     defaults:
       run:
         working-directory: ipad
+    env:
+      VERSION: 0.1.${{ github.run_number }}
+      BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +43,7 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             2>&1 | tee build.log || {
               grep -E "error:" build.log | sort -u | head -40 | while read -r line; do
@@ -49,7 +58,14 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/ExtendDisplay.app Payload/
           zip -qry ExtendDisplay.ipa Payload
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ExtendDisplay-ipa
-          path: ipad/ExtendDisplay.ipa
+      - name: Publish release + source.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-$BUILD"
+          url="https://github.com/${{ github.repository }}/releases/download/$tag/ExtendDisplay.ipa"
+          python3 make_source.py "$VERSION" "$BUILD" ExtendDisplay.ipa "$url" source.json
+          gh release create "$tag" ExtendDisplay.ipa source.json \
+            --title "Extend Display $VERSION" \
+            --notes "Built from ${{ github.sha }}" \
+            --latest

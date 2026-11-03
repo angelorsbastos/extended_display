@@ -15,6 +15,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.extenddisplay.app
         TARGETED_DEVICE_FAMILY: "2"  # iPad only
         SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # the CI build overrides these with the run number, so every build is newer
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
     info:
