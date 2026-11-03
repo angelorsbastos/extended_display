@@ -48,6 +48,11 @@ struct ConnectionPanel: View {
                       title: "Cable",
                       detail: model.transport == .usb ? "Connected." : "Not plugged in.")
             wifiRow
+            StatusRow(icon: "globe", state: model.transport == .remote ? .good : .idle, title: "Remote",
+                      detail: model.transport == .remote
+                          ? "Connected through Tailscale."
+                          : "Away from home: used automatically when Tailscale is on, on this iPad and "
+                            + "the laptop.")
             StatusRow(icon: "lock.fill", state: model.pairedLaptops > 0 ? .good : .idle, title: "Pairing",
                       detail: model.pairedLaptops > 0
                           ? "Paired with \(model.pairedLaptops) laptop\(model.pairedLaptops == 1 ? "" : "s")."
@@ -165,13 +170,23 @@ struct ConnectionBadge: View {
         switch transport {
         case .usb: return "Connected by cable"
         case .wifi: return "Connected over Wi-Fi"
+        case .remote: return "Connected remotely"
         case nil: return "Laptop not connected"
+        }
+    }
+
+    private var icon: String {
+        switch transport {
+        case .usb: return "cable.connector"
+        case .wifi: return "wifi"
+        case .remote: return "globe"
+        case nil: return "circle.fill"
         }
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: transport == .wifi ? "wifi" : transport == .usb ? "cable.connector" : "circle.fill")
+            Image(systemName: icon)
                 .font(.system(size: transport == nil ? 9 : 13, weight: .semibold))
                 .foregroundStyle(transport == nil ? Color.gray : Color.green)
             Text(text)

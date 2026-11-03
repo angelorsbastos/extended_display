@@ -10,6 +10,7 @@ enum MessageType: UInt8 {
 
 enum Transport: String {
     case usb, wifi
+    case remote  // Wi-Fi port, but arriving through Tailscale (away from home)
 }
 
 struct Shortcut: Decodable, Identifiable, Equatable {
