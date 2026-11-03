@@ -50,7 +50,21 @@ final class RootHostingController: UIHostingController<RootView> {
         screenChanges = model.$screen.sink { [weak self] _ in
             // $screen fires before the value changes; ask again once it has
             DispatchQueue.main.async { self?.setNeedsUpdateOfPrefersPointerLocked() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self?.reportPointerLock() }
         }
+    }
+
+    /// Tell the laptop's log whether iPadOS granted the pointer lock. It only does
+    /// for apps running full screen, so the window and screen sizes are included.
+    private func reportPointerLock() {
+        guard prefersPointerLocked, let scene = view.window?.windowScene else { return }
+        let locked = scene.pointerLockState?.isLocked ?? false
+        let window = view.window?.bounds.size ?? .zero
+        let screen = scene.screen.bounds.size
+        model.log("pointer lock \(locked ? "granted" : "NOT granted"); "
+                  + "iPadOS \(UIDevice.current.systemVersion); "
+                  + "window \(Int(window.width))x\(Int(window.height)) "
+                  + "of screen \(Int(screen.width))x\(Int(screen.height))")
     }
 
     @MainActor required dynamic init?(coder aDecoder: NSCoder) {

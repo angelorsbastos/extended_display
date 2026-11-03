@@ -115,6 +115,9 @@ struct VideoView: UIViewRepresentable {
             self.displayLayer = displayLayer
             super.init(frame: .zero)
             isMultipleTouchEnabled = true
+            // hide the iPad's own pointer over the video: the trackpad drives the
+            // Windows pointer, and iPadOS doesn't always grant the pointer lock
+            addInteraction(UIPointerInteraction(delegate: self))
             // a layer has one parent, so this also takes it from a previous VideoView
             layer.addSublayer(displayLayer)
         }
@@ -169,5 +172,12 @@ struct VideoView: UIViewRepresentable {
                 onTouches?(fingers)
             }
         }
+    }
+}
+
+extension VideoView.LayerView: UIPointerInteractionDelegate {
+    func pointerInteraction(_ interaction: UIPointerInteraction,
+                            styleFor region: UIPointerRegion) -> UIPointerStyle? {
+        .hidden()
     }
 }
