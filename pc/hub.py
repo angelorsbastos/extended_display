@@ -8,6 +8,7 @@ shortcuts from shortcuts.json, the Controls screen. The cable wins when both wor
 Wire format, both directions: [u8 type][u32 big-endian length][payload]
   type 1 = H.264 video (laptop -> iPad)
   type 4 = AAC audio packet, raw (laptop -> iPad, after audio_started)
+  type 5 = a piece of a file, both ways (see files.py: file_start / file_end / file_saved)
   type 3 = a type 1, 2 or 4 message sealed by secure.Cipher (all of Wi-Fi, after login)
   type 2 = JSON message (both ways), always with a "type" field:
     connection setup: identity (iPad, first), pairing and login: see secure.py
@@ -45,6 +46,7 @@ import audio
 import clipboard
 import controls
 import discovery
+import files
 import inputs
 import layout
 import monitors
@@ -110,12 +112,15 @@ class Session:
         return json.loads(payload)
 
     def messages(self):
-        """Yield the JSON messages the iPad sends, until it disconnects."""
+        """Yield the JSON messages the iPad sends, until it disconnects. A piece
+        of a file comes as {"type": "file_data", "payload": bytes}."""
         try:
             while True:
                 msg_type, payload = self.read()
                 if msg_type == MSG_JSON:
                     yield json.loads(payload)
+                elif msg_type == files.MSG_FILE:
+                    yield {"type": "file_data", "payload": payload}
         except (OSError, EOFError):
             return
 
@@ -381,6 +386,9 @@ def handle(session):
     clip = ClipboardSync(session)
     controls_watch = ControlsWatch(session)
     touch = touchscreen()
+    receiver = files.Receiver(session)
+    sender = files.Sender(session)
+    files.set_active_sender(sender)
 
     video = None
     sound = None         # audio.AudioStream while the iPad plays the laptop's sound
@@ -462,6 +470,14 @@ def handle(session):
             if kind == "touch":
                 if streaming:
                     touch.update(msg.get("touches", []))
+            elif kind == "file_data":
+                receiver.data(msg["payload"])
+            elif kind == "file_start":
+                receiver.start(msg)
+            elif kind == "file_end":
+                receiver.end(msg)
+            elif kind == "file_cancel":
+                receiver.cancel(msg)
             elif kind == "key":
                 inputs.key(msg.get("usage"), bool(msg.get("down")))
             elif kind == "mouse_move":
@@ -521,6 +537,8 @@ def handle(session):
         stop_video()
         if sound:
             sound.stop()
+        receiver.close()
+        files.set_active_sender(None, only_if=sender)
         if displays:
             displays.close()
         session.close()
@@ -691,6 +709,10 @@ def run(stop, on_status=print):
         print(f"Wi-Fi discovery unavailable: {e}")
         browser = None
     pairing_paused_until = {}  # iPad id -> time
+    try:
+        files.serve_outbox()  # "Send to > iPad" in Explorer
+    except OSError as e:
+        print(f"Send to iPad unavailable: {e}")
     try:
         while not stop.is_set():
             session = wait_for_ipad(stop, on_status, browser, pairing_paused_until)

@@ -11,6 +11,7 @@ enum Screen: Equatable {
     case shortcuts
     case controls
     case clipboard
+    case files
 }
 
 /// App state, shared by all screens. Published properties change on the main thread only.
@@ -50,6 +51,10 @@ final class AppModel: ObservableObject {
 
     let displayLayer = AVSampleBufferDisplayLayer()
     let clipboardHistory = ClipboardHistory()
+    let files = FileTransfers()
+    /// Files other apps shared here (Share > Extend Display) before the laptop was
+    /// connected: sent as soon as it is.
+    private var sharedWhileAway: [URL] = []
     private let server = StreamServer()
     private let input = InputCapture()
     private let audio = AudioPlayer()
@@ -77,6 +82,8 @@ final class AppModel: ObservableObject {
             self?.requestKeyframe()
         }
         audio.onProblem = { [weak self] text in self?.log(text) }
+        files.attach(server)
+        server.onFileData = { [weak self] payload in self?.files.receive(payload) }
 
         server.onConnected = { [weak self] transport in
             self?.linkTransport = transport
@@ -88,6 +95,10 @@ final class AppModel: ObservableObject {
                 self.soundOnIPad = Self.soundSetting(for: transport)
                 if self.soundOnIPad {
                     self.server.send(json: ["type": "sound", "on": true])
+                }
+                if !self.sharedWhileAway.isEmpty {
+                    self.files.send(self.sharedWhileAway)
+                    self.sharedWhileAway.removeAll()
                 }
             }
         }
@@ -113,6 +124,7 @@ final class AppModel: ObservableObject {
         refreshNetworkInfo()
         server.onDisconnected = { [weak self] in
             self?.audio.stop()
+            self?.files.disconnected()
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.connected = false
@@ -186,6 +198,23 @@ final class AppModel: ObservableObject {
     /// Change a laptop setting or run a power action; see pc/controls.py apply().
     func control(_ name: String, _ value: Any = true) {
         server.send(json: ["type": "control", "name": name, "value": value])
+    }
+
+    /// Another app shared files here (Share > Extend Display, or "Open in"): send
+    /// them to the laptop's Downloads, now or as soon as it connects.
+    func openShared(_ urls: [URL]) {
+        let copies = urls.compactMap { FileTransfers.makeSendableCopy(of: $0) }
+        guard !copies.isEmpty else { return }
+        if connected {
+            files.send(copies)
+        } else {
+            sharedWhileAway += copies
+            files.note = "Will send \(copies.count == 1 ? "“\(copies[0].lastPathComponent)”" : "\(copies.count) files") "
+                + "when the laptop connects"
+        }
+        if screen == .home {
+            open(.files)
+        }
     }
 
     /// Play the laptop's sound here (or stop), and remember it for this kind of connection.
@@ -305,6 +334,10 @@ final class AppModel: ObservableObject {
             // a new stream starts with new parameter sets; drop the old ones
             decoder.reset()
             videoFlowing = false
+        }
+        if message.type.hasPrefix("file_") {
+            files.handle(message)
+            return
         }
         if message.type == "audio_started" {
             // before the first packet, which is right behind this message

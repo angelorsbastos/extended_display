@@ -7,6 +7,7 @@ enum MessageType: UInt8 {
     case json = 2    // both ways
     case sealed = 3  // a video, json or audio message encrypted by Cipher (all of Wi-Fi)
     case audio = 4   // one AAC packet, laptop -> iPad (after audio_started)
+    case file = 5    // a piece of a file, both ways: [u32 id][bytes] (see FileTransfers)
 }
 
 enum Transport: String {
@@ -62,6 +63,10 @@ struct LaptopMessage: Decodable {
     let width: Int?
     let height: Int?
     let message: String?
+    // file_start / file_end / file_saved / file_failed
+    let id: Int?
+    let name: String?
+    let size: Int64?
     // audio_started
     let sampleRate: Int?
     let channels: Int?

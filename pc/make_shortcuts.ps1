@@ -19,3 +19,14 @@ foreach ($folder in [Environment]::GetFolderPath("Desktop"), [Environment]::GetF
     $link.Save()
     Write-Output "created $($link.FullName)"
 }
+
+# Explorer: right-click a file > Send to > iPad (Extend Display). On Windows 11 the
+# "Send to" menu is under "Show more options" (or Shift+right-click).
+$link = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath("SendTo")) "iPad (Extend Display).lnk"))
+$link.TargetPath = $pythonw
+$link.Arguments = "`"$(Join-Path $PSScriptRoot "sendfile.py")`""
+$link.WorkingDirectory = $PSScriptRoot
+$link.IconLocation = $icon
+$link.Description = "Send to the iPad"
+$link.Save()
+Write-Output "created $($link.FullName)"

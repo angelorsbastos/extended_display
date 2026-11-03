@@ -34,6 +34,8 @@ struct HomeView: View {
                 // the history is kept on the iPad, so it opens even without the laptop
                 ModeCard(title: "Clipboard", subtitle: "The last \(ClipboardHistory.limit) things copied, on either side",
                          icon: "list.clipboard", tint: .pink) { model.open(.clipboard) }
+                ModeCard(title: "Files", subtitle: "Send photos and files both ways",
+                         icon: "arrow.up.arrow.down.circle", tint: .cyan) { model.open(.files) }
             }
 
             ConnectionPanel(model: model)

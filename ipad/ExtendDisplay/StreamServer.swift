@@ -20,6 +20,7 @@ final class StreamServer {
     var onDisconnected: (() -> Void)?
     var onVideo: ((Data) -> Void)?
     var onAudio: ((Data) -> Void)?
+    var onFileData: ((Data) -> Void)?
     var onMessage: ((LaptopMessage) -> Void)?
     /// A laptop wants to pair over Wi-Fi: show a screen where the user types its code.
     var onPairingRequest: ((String) -> Void)?
@@ -69,6 +70,19 @@ final class StreamServer {
         queue.async { [weak self] in
             guard let self, let link = self.active else { return }
             self.sendJSON(object, on: link)
+        }
+    }
+
+    /// Send a binary message (a piece of a file). `then` runs once the network has
+    /// taken it, with false if there is no laptop: wait for it before sending the
+    /// next piece, so a big file doesn't pile up in memory.
+    func send(_ type: MessageType, _ payload: Data, then: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            guard let self, let link = self.active else {
+                then(false)
+                return
+            }
+            self.sendFrame(type.rawValue, payload, on: link) { then(true) }
         }
     }
 
@@ -242,6 +256,8 @@ final class StreamServer {
             if link === active { onVideo?(payload) }
         case .audio:
             if link === active { onAudio?(payload) }
+        case .file:
+            if link === active { onFileData?(payload) }
         case .json:
             if link.transport == .usb,
                let message = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
@@ -332,7 +348,11 @@ final class StreamServer {
     /// e.g. to close the connection without cutting off this last message.
     private func sendJSON(_ object: [String: Any], on link: Link, then: (() -> Void)? = nil) {
         guard let body = try? JSONSerialization.data(withJSONObject: object) else { return }
-        var type = MessageType.json.rawValue
+        sendFrame(MessageType.json.rawValue, body, on: link, then: then)
+    }
+
+    private func sendFrame(_ type: UInt8, _ body: Data, on link: Link, then: (() -> Void)? = nil) {
+        var type = type
         var payload = body
         if let cipher = link.cipher {
             guard let sealed = try? cipher.seal(Data([type]) + body) else { return }

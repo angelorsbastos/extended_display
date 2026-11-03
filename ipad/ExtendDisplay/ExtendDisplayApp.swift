@@ -30,6 +30,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // a monitor should not go to sleep
         UIApplication.shared.isIdleTimerDisabled = true
         model.start()
+        // started by sharing a file to the app
+        if !connectionOptions.urlContexts.isEmpty {
+            model.openShared(connectionOptions.urlContexts.map(\.url))
+        }
+    }
+
+    /// Share > Extend Display (or "Open in") from another app, while running.
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        model.openShared(URLContexts.map(\.url))
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -102,7 +111,10 @@ struct RootView: View {
                     ControlsView(model: model)
                 case .clipboard:
                     ClipboardScreen(model: model)
+                case .files:
+                    FilesView(model: model, files: model.files)
                 }
+                FileNoteBanner(files: model.files)
                 if let laptop = model.pairingLaptop {
                     PairingView(model: model, laptopName: laptop)
                 }
