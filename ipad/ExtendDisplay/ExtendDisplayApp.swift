@@ -42,6 +42,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 final class RootHostingController: UIHostingController<RootView> {
     private let model: AppModel
     private var screenChanges: AnyCancellable?
+    private var clipboardChanges: AnyCancellable?
 
     init(model: AppModel) {
         self.model = model
@@ -50,6 +51,10 @@ final class RootHostingController: UIHostingController<RootView> {
             // $screen fires before the value changes; ask again once it has
             DispatchQueue.main.async { self?.setNeedsUpdateOfPrefersPointerLocked() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self?.reportPointerLock() }
+        }
+        // the clipboard panel over the video needs the iPad's own pointer
+        clipboardChanges = model.$showingClipboard.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.setNeedsUpdateOfPrefersPointerLocked() }
         }
     }
 
@@ -71,7 +76,7 @@ final class RootHostingController: UIHostingController<RootView> {
     }
 
     override var prefersPointerLocked: Bool {
-        if case .video = model.screen { return true }
+        if case .video = model.screen, !model.showingClipboard { return true }
         return false
     }
 
@@ -95,6 +100,8 @@ struct RootView: View {
                     ShortcutsView(model: model)
                 case .controls:
                     ControlsView(model: model)
+                case .clipboard:
+                    ClipboardScreen(model: model)
                 }
                 if let laptop = model.pairingLaptop {
                     PairingView(model: model, laptopName: laptop)

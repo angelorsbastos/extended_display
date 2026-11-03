@@ -10,6 +10,7 @@ enum Screen: Equatable {
     case video(VideoMode)
     case shortcuts
     case controls
+    case clipboard
 }
 
 /// App state, shared by all screens. Published properties change on the main thread only.
@@ -39,8 +40,16 @@ final class AppModel: ObservableObject {
     /// Play the laptop's sound on the iPad. Remembered separately for remote use
     /// (on by default: nobody hears the laptop) and at home (off by default).
     @Published private(set) var soundOnIPad = false
+    /// The clipboard panel over the video (four-finger tap).
+    @Published var showingClipboard = false {
+        didSet {
+            // keyboard and trackpad work the panel, not the laptop, while it's open
+            if case .video = screen { input.active = !showingClipboard }
+        }
+    }
 
     let displayLayer = AVSampleBufferDisplayLayer()
+    let clipboardHistory = ClipboardHistory()
     private let server = StreamServer()
     private let input = InputCapture()
     private let audio = AudioPlayer()
@@ -162,6 +171,7 @@ final class AppModel: ObservableObject {
         }
         input.active = false
         receivingVideo = false
+        showingClipboard = false
         screen = .home
     }
 
@@ -258,11 +268,34 @@ final class AppModel: ObservableObject {
         guard connected, pasteboard.changeCount != pasteboardSeen else { return }
         pasteboardSeen = pasteboard.changeCount
         if pasteboard.hasImages, let png = pasteboard.image?.pngData() {
+            clipboardHistory.addImage(png: png, from: .iPad)
             server.send(json: ["type": "clipboard", "kind": "image",
                                "png": png.base64EncodedString()])
         } else if pasteboard.hasStrings, let text = pasteboard.string {
+            clipboardHistory.addText(text, from: .iPad)
             server.send(json: ["type": "clipboard", "kind": "text", "text": text])
         }
+    }
+
+    /// Put a history item on both clipboards, the iPad's and the laptop's.
+    /// With `paste`, the laptop also pastes it (Ctrl+V) where its cursor is.
+    func copy(_ item: ClipItem, paste: Bool = false) {
+        var message: [String: Any] = ["type": "clipboard", "paste": paste]
+        let pasteboard = UIPasteboard.general
+        if let text = item.text {
+            pasteboard.string = text
+            message["kind"] = "text"
+            message["text"] = text
+        } else if let png = clipboardHistory.png(of: item), let image = UIImage(data: png) {
+            pasteboard.image = image
+            message["kind"] = "image"
+            message["png"] = png.base64EncodedString()
+        } else {
+            return
+        }
+        pasteboardSeen = pasteboard.changeCount  // ours: don't send it again on return
+        clipboardHistory.touch(item)
+        server.send(json: message)
     }
 
     // MARK: messages from the laptop (on the server's queue)
@@ -305,9 +338,11 @@ final class AppModel: ObservableObject {
         let pasteboard = UIPasteboard.general
         if message.kind == "text", let text = message.text {
             pasteboard.string = text
+            clipboardHistory.addText(text, from: .laptop)
         } else if message.kind == "image", let png = message.png,
                   let data = Data(base64Encoded: png), let image = UIImage(data: data) {
             pasteboard.image = image
+            clipboardHistory.addImage(png: data, from: .laptop)
         } else {
             return
         }
