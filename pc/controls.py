@@ -67,6 +67,16 @@ def _microphone():
     return _endpoint_volume(E_CAPTURE)
 
 
+def speaker_level_db():
+    """The speakers' volume in dB (0 at 100%, negative below), or None if unknown.
+    audio.py uses it to undo the volume in what it captures."""
+    return _worker.submit(_safe, _speaker_db).result()
+
+
+def _speaker_db():
+    return _speakers().GetMasterVolumeLevel()
+
+
 # ---- screen and theme -------------------------------------------------------------
 
 THEME_KEY = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"

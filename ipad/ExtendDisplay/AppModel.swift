@@ -36,12 +36,17 @@ final class AppModel: ObservableObject {
     @Published var listenError: String?
     /// Size of the laptop screen being streamed, to map touches onto it.
     @Published var videoSize = CGSize(width: 16, height: 9)
+    /// Play the laptop's sound on the iPad. Remembered separately for remote use
+    /// (on by default: nobody hears the laptop) and at home (off by default).
+    @Published private(set) var soundOnIPad = false
 
     let displayLayer = AVSampleBufferDisplayLayer()
     private let server = StreamServer()
     private let input = InputCapture()
+    private let audio = AudioPlayer()
     private lazy var decoder = H264Decoder(layer: displayLayer)
     private var videoFlowing = false  // only touched on the server's queue
+    private var linkTransport: Transport?  // `transport`, but for the server's queue
     private var started = false
     private var portrait = false
     private var lastKeyframeRequest = Date.distantPast
@@ -62,11 +67,19 @@ final class AppModel: ObservableObject {
             self?.log("video decoder reset (\(reason)), asking for a keyframe")
             self?.requestKeyframe()
         }
+        audio.onProblem = { [weak self] text in self?.log(text) }
 
         server.onConnected = { [weak self] transport in
+            self?.linkTransport = transport
+            self?.audio.stop()  // a new connection (e.g. the cable replacing Wi-Fi) starts its own
             DispatchQueue.main.async {
-                self?.connected = true
-                self?.transport = transport
+                guard let self else { return }
+                self.connected = true
+                self.transport = transport
+                self.soundOnIPad = Self.soundSetting(for: transport)
+                if self.soundOnIPad {
+                    self.server.send(json: ["type": "sound", "on": true])
+                }
             }
         }
         server.onPairingRequest = { [weak self] laptopName in
@@ -90,6 +103,7 @@ final class AppModel: ObservableObject {
         }
         refreshNetworkInfo()
         server.onDisconnected = { [weak self] in
+            self?.audio.stop()
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.connected = false
@@ -105,6 +119,9 @@ final class AppModel: ObservableObject {
             guard let self, self.decoder.decode(data), !self.videoFlowing else { return }
             self.videoFlowing = true
             DispatchQueue.main.async { self.receivingVideo = true }
+        }
+        server.onAudio = { [weak self] packet in
+            self?.audio.play(packet)
         }
         server.onMessage = { [weak self] message in
             self?.handle(message)
@@ -159,6 +176,25 @@ final class AppModel: ObservableObject {
     /// Change a laptop setting or run a power action; see pc/controls.py apply().
     func control(_ name: String, _ value: Any = true) {
         server.send(json: ["type": "control", "name": name, "value": value])
+    }
+
+    /// Play the laptop's sound here (or stop), and remember it for this kind of connection.
+    func setSoundOnIPad(_ on: Bool) {
+        guard let transport else { return }
+        soundOnIPad = on
+        UserDefaults.standard.set(on, forKey: Self.soundKey(for: transport))
+        if !on {
+            audio.stop()
+        }
+        server.send(json: ["type": "sound", "on": on])
+    }
+
+    private static func soundKey(for transport: Transport) -> String {
+        transport == .remote ? "soundOnIPad.remote" : "soundOnIPad.home"
+    }
+
+    private static func soundSetting(for transport: Transport) -> Bool {
+        UserDefaults.standard.object(forKey: soundKey(for: transport)) as? Bool ?? (transport == .remote)
     }
 
     func submitPairingCode(_ code: String) {
@@ -236,6 +272,11 @@ final class AppModel: ObservableObject {
             // a new stream starts with new parameter sets; drop the old ones
             decoder.reset()
             videoFlowing = false
+        }
+        if message.type == "audio_started" {
+            // before the first packet, which is right behind this message
+            audio.start(sampleRate: Double(message.sampleRate ?? 48000), channels: message.channels ?? 2,
+                        remote: linkTransport == .remote)
         }
         DispatchQueue.main.async {
             switch message.type {

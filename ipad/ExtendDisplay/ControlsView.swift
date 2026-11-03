@@ -76,6 +76,13 @@ struct ControlsView: View {
                 ToggleButton(title: "Mic off", icon: "mic.slash.fill",
                              isOn: toggle(\.micMuted, "mic_muted"))
             }
+            ToggleButton(title: "Play on iPad", icon: "ipad.landscape",
+                         isOn: Binding(get: { model.soundOnIPad }, set: { model.setSoundOnIPad($0) }))
+            if model.soundOnIPad {
+                Text("The laptop plays it too. Turn the laptop down rather than muting it: muted, the iPad hears nothing.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

@@ -5,7 +5,8 @@ import Foundation
 enum MessageType: UInt8 {
     case video = 1   // H.264, laptop -> iPad
     case json = 2    // both ways
-    case sealed = 3  // a video or json message encrypted by Cipher (all of Wi-Fi)
+    case sealed = 3  // a video, json or audio message encrypted by Cipher (all of Wi-Fi)
+    case audio = 4   // one AAC packet, laptop -> iPad (after audio_started)
 }
 
 enum Transport: String {
@@ -61,6 +62,9 @@ struct LaptopMessage: Decodable {
     let width: Int?
     let height: Int?
     let message: String?
+    // audio_started
+    let sampleRate: Int?
+    let channels: Int?
     // clipboard: kind is "text" (with text) or "image" (with png, base64)
     let kind: String?
     let text: String?

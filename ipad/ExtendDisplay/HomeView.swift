@@ -12,6 +12,9 @@ struct HomeView: View {
                 Text("Extend Display")
                     .font(.largeTitle.bold())
                 Spacer()
+                if model.connected {
+                    SoundButton(model: model)
+                }
                 ConnectionBadge(transport: model.transport)
             }
 
@@ -196,6 +199,30 @@ struct ConnectionBadge: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Capsule().fill(Color.white.opacity(0.08)))
+    }
+}
+
+/// Where the laptop's sound plays: tap to switch between the iPad and the laptop.
+struct SoundButton: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Button {
+            model.setSoundOnIPad(!model.soundOnIPad)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: model.soundOnIPad ? "speaker.wave.2.fill" : "laptopcomputer")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(model.soundOnIPad ? Color.green : Color.gray)
+                Text(model.soundOnIPad ? "Sound on iPad" : "Sound on laptop")
+                    .font(.callout)
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .buttonStyle(PressableStyle())
     }
 }
 

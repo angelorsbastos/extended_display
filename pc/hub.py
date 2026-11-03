@@ -7,7 +7,8 @@ shortcuts from shortcuts.json, the Controls screen. The cable wins when both wor
 
 Wire format, both directions: [u8 type][u32 big-endian length][payload]
   type 1 = H.264 video (laptop -> iPad)
-  type 3 = a type 1 or 2 message sealed by secure.Cipher (all of Wi-Fi, after login)
+  type 4 = AAC audio packet, raw (laptop -> iPad, after audio_started)
+  type 3 = a type 1, 2 or 4 message sealed by secure.Cipher (all of Wi-Fi, after login)
   type 2 = JSON message (both ways), always with a "type" field:
     connection setup: identity (iPad, first), pairing and login: see secure.py
     iPad -> laptop: start_video {mode, portrait}, stop_video, orientation {portrait},
@@ -17,8 +18,10 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     mouse_button {button, down}, scroll {dx, dy}, clipboard,
                     log {text} (diagnostics, printed to the hub's log),
                     keyframe (re-send the current picture as a full keyframe),
-                    watch_controls {on}, control {name, value} (see controls.apply)
+                    watch_controls {on}, control {name, value} (see controls.apply),
+                    sound {on} (play the laptop's sound on the iPad, see audio.py)
     laptop -> iPad: hello {shortcuts}, video_started {width, height},
+                    audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
                     now_playing {now_playing}, error {message}, clipboard,
                     controls {controls} (see controls.state)
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64}
@@ -37,6 +40,7 @@ from av.video.frame import PictureType
 from windows_capture import WindowsCapture
 
 import actions
+import audio
 import clipboard
 import controls
 import discovery
@@ -54,6 +58,7 @@ PORT = 7000
 MSG_VIDEO = 1
 MSG_JSON = 2
 MSG_SEALED = 3
+MSG_AUDIO = 4
 # Wi-Fi bandwidth is less steady than the cable's; less data means less stutter
 BIT_RATE = {"usb": 15_000_000, "wifi": 8_000_000, "remote": 5_000_000}  # remote: home upload
 WIFI_PAIRING_RETRY = 60  # seconds before offering pairing again after a cancel
@@ -375,6 +380,7 @@ def handle(session):
     touch = touchscreen()
 
     video = None
+    sound = None         # audio.AudioStream while the iPad plays the laptop's sound
     streaming = None     # name of the screen being streamed, e.g. \\.\DISPLAY26
     displays = None      # Parsec driver connection, opened on the first Extend
     extend_index = None  # driver index of the screen we created for Extend
@@ -413,6 +419,20 @@ def handle(session):
         else:
             capture(monitors.primary_monitor()["name"])
         print(f"{mode} started")
+
+    def set_sound(on):
+        nonlocal sound
+        if sound:
+            sound.stop()
+            sound = None
+        if on:
+            sound = audio.AudioStream(
+                audio.BIT_RATE[session.transport],
+                on_started=lambda config: session.send_json({
+                    "type": "audio_started", "sample_rate": audio.SAMPLE_RATE,
+                    "channels": audio.CHANNELS, "config": base64.b64encode(config).decode()}),
+                on_packet=lambda packet: session.send(MSG_AUDIO, packet))
+        print("sound on the iPad" if on else "sound on the laptop only")
 
     def rotate(portrait):
         """The iPad turned: turn the Extend screen to match (Mirror can't rotate
@@ -456,6 +476,8 @@ def handle(session):
                     video.keyframe()
             elif kind == "watch_controls":
                 controls_watch.watch(bool(msg.get("on")))
+            elif kind == "sound":
+                set_sound(bool(msg.get("on")))
             elif kind == "control":
                 print(f"control: {msg.get('name')} = {msg.get('value')}")
                 try:
@@ -494,6 +516,8 @@ def handle(session):
         traceback.print_exc()
     finally:
         stop_video()
+        if sound:
+            sound.stop()
         if displays:
             displays.close()
         session.close()
