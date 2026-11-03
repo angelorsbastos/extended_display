@@ -1,4 +1,4 @@
-av
+﻿av
 numpy
 windows-capture
 winrt-runtime
@@ -7,5 +7,4 @@ winrt-Windows.Foundation
 pystray
 pillow
 pycaw
-screen-brightness-control
 winrt-Windows.Devices.Radios

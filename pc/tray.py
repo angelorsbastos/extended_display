@@ -4,6 +4,7 @@ This is what the "Extend Display" desktop / Start menu shortcut starts, using
 pythonw.exe. Output goes to pc/hub.log. Quit from the tray icon's menu.
 """
 import ctypes
+import faulthandler
 import os
 import pathlib
 import sys
@@ -16,6 +17,9 @@ LOG = HERE / "hub.log"
 # pythonw has no console: send prints and errors to a log file instead
 sys.stdout = sys.stderr = open(LOG, "a", encoding="utf-8", buffering=1)
 print(f"\n--- started {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+# if native code crashes the process, write every thread's Python stack to the
+# log first; otherwise the hub just vanishes without a trace
+faulthandler.enable(file=sys.stderr, all_threads=True)
 
 import pystray  # noqa: E402
 from PIL import Image  # noqa: E402
