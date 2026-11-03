@@ -52,6 +52,15 @@ jobs:
               exit 1
             }
 
+      - name: Check app version matches the source
+        run: |
+          # SideStore refuses the install if these differ from source.json
+          plist=build/Build/Products/Release-iphoneos/ExtendDisplay.app/Info.plist
+          v=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist")
+          b=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist")
+          echo "app says $v ($b), expected $VERSION ($BUILD)"
+          [ "$v" = "$VERSION" ] && [ "$b" = "$BUILD" ] || { echo "::error::version mismatch"; exit 1; }
+
       - name: Package .ipa
         run: |
           mkdir Payload

@@ -23,6 +23,9 @@ targets:
       path: ExtendDisplay/Info.plist
       properties:
         CFBundleDisplayName: Extend Display
+        # XcodeGen writes literal 1.0 / 1 unless told to use the build settings
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}  # without this iOS shows the app letterboxed
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
