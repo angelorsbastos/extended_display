@@ -22,11 +22,12 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     watch_controls {on}, control {name, value} (see controls.apply),
                     save_shortcuts {shortcuts} (the whole list, see actions.save_shortcuts),
                     try_shortcut {shortcut} (run one without saving), list_apps,
+                    watch_stats {on} (the Dashboard is open: send stats every 2 s),
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
     laptop -> iPad: hello {shortcuts} (also after save_shortcuts), apps {apps: [{name, open}]},
                     video_started {width, height},
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
-                    now_playing {now_playing}, error {message}, clipboard,
+                    now_playing {now_playing}, error {message}, clipboard, stats {stats} (stats.read()),
                     controls {controls} (see controls.state)
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64};
                            from the iPad also paste: true to press Ctrl+V after
@@ -57,6 +58,7 @@ import layout
 import monitors
 import nowplaying
 import secure
+import stats
 import tailnet
 import usbmux
 import vdd
@@ -301,6 +303,31 @@ class ControlsWatch:
             self.refresh.clear()
 
 
+class StatsWatch:
+    """While the iPad shows its Dashboard, send temperatures, fans, usage and
+    battery health every 2 s (see stats.py). Only then: asking the NVIDIA
+    driver wakes a sleeping GPU."""
+
+    def __init__(self, session):
+        self.session = session
+        self.on = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def watch(self, on):
+        (self.on.set if on else self.on.clear)()
+
+    def _run(self):
+        while not self.session.closed.is_set():
+            if not self.on.wait(0.5):
+                continue
+            started = time.time()
+            try:
+                self.session.send_json({"type": "stats", "stats": stats.read()})
+            except OSError:
+                return
+            time.sleep(max(0.0, 2 - (time.time() - started)))
+
+
 _touchscreen = None
 
 
@@ -390,6 +417,7 @@ def handle(session):
 
     clip = ClipboardSync(session)
     controls_watch = ControlsWatch(session)
+    stats_watch = StatsWatch(session)
     touch = touchscreen()
     receiver = files.Receiver(session)
     sender = files.Sender(session)
@@ -500,6 +528,8 @@ def handle(session):
                     video.keyframe()
             elif kind == "watch_controls":
                 controls_watch.watch(bool(msg.get("on")))
+            elif kind == "watch_stats":
+                stats_watch.watch(bool(msg.get("on")))
             elif kind == "sound":
                 set_sound(bool(msg.get("on")))
             elif kind == "control":
