@@ -177,9 +177,9 @@ class Touchpad:
     def _run(self):
         self._proc = WNDPROC(self._window_proc)
         instance = kernel32.GetModuleHandleW(None)
-        wc = WNDCLASSW(lpfnWndProc=self._proc, hInstance=instance, lpszClassName="ExtendDisplayTouchpad")
+        wc = WNDCLASSW(lpfnWndProc=self._proc, hInstance=instance, lpszClassName="WingmanTouchpad")
         user32.RegisterClassW(ctypes.byref(wc))
-        hwnd = user32.CreateWindowExW(0, "ExtendDisplayTouchpad", None, 0, 0, 0, 0, 0,
+        hwnd = user32.CreateWindowExW(0, "WingmanTouchpad", None, 0, 0, 0, 0, 0,
                                       HWND_MESSAGE, None, instance, None)
         device = RAWINPUTDEVICE(PAGE_DIGITIZER, 0x05, RIDEV_INPUTSINK, hwnd)  # 0x05 = touch pad
         if not hwnd or not user32.RegisterRawInputDevices(ctypes.byref(device), 1, ctypes.sizeof(device)):

@@ -7,6 +7,7 @@ import Security
 /// label, field order and key split here has to match secure.py exactly.
 
 enum PairingStore {
+    // the original name, kept: renaming it would lose every pairing already made
     private static let service = "dev.extenddisplay.pairing"
 
     /// This iPad's id, announced over Bonjour so the laptop can find its key.

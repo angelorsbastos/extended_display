@@ -4,7 +4,7 @@ import { Timer } from "lucide-react";
 import { fontFamily, T } from "../theme";
 import { AppIcon, SONG } from "./ui";
 
-// The Dock (ipad/ExtendDisplay/Dock.swift), iPad on its side, 1180 x 820:
+// The Dock (ipad/Wingman/Dock.swift), iPad on its side, 1180 x 820:
 // a huge thin clock with the date and a running timer on the left; the song
 // with its equalizer and volume line, then six shortcuts, on the right; a slow
 // glow in the song's colour behind it all. Night turns everything dim red.

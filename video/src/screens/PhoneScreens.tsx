@@ -3,7 +3,7 @@ import { ChevronLeft, CornerDownRight, Keyboard, LogOut } from "lucide-react";
 import { fontFamily, T } from "../theme";
 import { AppIcon } from "./ui";
 
-// The iPhone's Trackpad screen (ipad/ExtendDisplay/PhoneViews.swift), 393 x 852,
+// The iPhone's Trackpad screen (ipad/Wingman/PhoneViews.swift), 393 x 852,
 // and a stylised laptop desktop (1280 x 800) whose cursor follows the finger.
 
 export const SURFACE = { x: 16, y: 112, w: 361, h: 600 };

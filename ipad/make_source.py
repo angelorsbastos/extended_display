@@ -8,16 +8,16 @@ import json
 import os
 import sys
 
-REPO = "angelorsbastos/extended_display"
+REPO = "angelorsbastos/wingman"
 SOURCE_URL = f"https://github.com/{REPO}/releases/latest/download/source.json"
 ICON_URL = (f"https://raw.githubusercontent.com/{REPO}/main/"
-            "ipad/ExtendDisplay/Assets.xcassets/AppIcon.appiconset/icon.png")
+            "ipad/Wingman/Assets.xcassets/AppIcon.appiconset/icon.png")
 
 version, build, ipa_path, download_url, out_path = sys.argv[1:6]
 
 source = {
     "name": "Wingman",
-    "identifier": "dev.extenddisplay.source",
+    "identifier": "dev.extenddisplay.source",  # original ids, kept: SideStore knows the app by them
     "sourceURL": SOURCE_URL,
     "iconURL": ICON_URL,
     "apps": [{

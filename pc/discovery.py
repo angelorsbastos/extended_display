@@ -9,7 +9,7 @@ import time
 import ifaddr
 from zeroconf import IPVersion, ServiceBrowser, ServiceListener, Zeroconf
 
-SERVICE = "_extenddisplay._tcp.local."
+SERVICE = "_extenddisplay._tcp.local."  # the original name, kept (see the app's StreamServer)
 HOTSPOT_ADDRESS = "192.168.137.1"  # Windows' Mobile hotspot always uses this
 
 
