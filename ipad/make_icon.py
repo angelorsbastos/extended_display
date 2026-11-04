@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 S = 1024
-OUT = pathlib.Path(__file__).parent / "ExtendDisplay/Assets.xcassets/AppIcon.appiconset/icon.png"
+OUT = pathlib.Path(__file__).parent / "Wingman/Assets.xcassets/AppIcon.appiconset/icon.png"
 
 # vertical gradient background, BGR
 top, bottom = np.array([120, 40, 20]), np.array([200, 90, 40])

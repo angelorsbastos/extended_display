@@ -2,7 +2,7 @@
 # publishes it as a GitHub Release, together with source.json.
 # SideStore follows that source, so each push shows up on the iPad as
 # "Update available". Source URL to add in SideStore:
-#   https://github.com/angelorsbastos/extended_display/releases/latest/download/source.json
+#   https://github.com/angelorsbastos/wingman/releases/latest/download/source.json
 name: Build iPad app
 
 on:
@@ -46,8 +46,8 @@ jobs:
           # on the run's summary page instead of being buried in the log
           set -o pipefail
           xcodebuild build \
-            -project ExtendDisplay.xcodeproj \
-            -scheme ExtendDisplay \
+            -project Wingman.xcodeproj \
+            -scheme Wingman \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -64,7 +64,7 @@ jobs:
       - name: Check app version matches the source
         run: |
           # SideStore refuses the install if these differ from source.json
-          plist=build/Build/Products/Release-iphoneos/ExtendDisplay.app/Info.plist
+          plist=build/Build/Products/Release-iphoneos/Wingman.app/Info.plist
           v=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist")
           b=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist")
           echo "app says $v ($b), expected $VERSION ($BUILD)"
@@ -73,22 +73,22 @@ jobs:
       - name: Package .ipa
         run: |
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/ExtendDisplay.app Payload/
-          zip -qry ExtendDisplay.ipa Payload
+          cp -R build/Build/Products/Release-iphoneos/Wingman.app Payload/
+          zip -qry Wingman.ipa Payload
 
       - name: Publish release + source.json
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="build-$BUILD"
-          url="https://github.com/${{ github.repository }}/releases/download/$tag/ExtendDisplay.ipa"
-          python3 make_source.py "$VERSION" "$BUILD" ExtendDisplay.ipa "$url" source.json
+          url="https://github.com/${{ github.repository }}/releases/download/$tag/Wingman.ipa"
+          python3 make_source.py "$VERSION" "$BUILD" Wingman.ipa "$url" source.json
           # SideStore reads the "latest" release; never let an older build that
           # finished late (e.g. a re-run) take that over from a newer one
           newest=$(gh release list --limit 100 --json tagName --jq '[.[].tagName | ltrimstr("build-") | tonumber] | max // 0')
           latest=true
           if [ "$newest" -gt "$BUILD" ]; then latest=false; fi
-          gh release create "$tag" ExtendDisplay.ipa source.json \
+          gh release create "$tag" Wingman.ipa source.json \
             --title "Wingman $VERSION" \
             --notes "Built from ${{ github.sha }}" \
             --latest="$latest"

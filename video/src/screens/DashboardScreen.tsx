@@ -2,7 +2,7 @@ import React from "react";
 import { BatteryCharging, ChevronLeft, Cpu, Fan, Layers, MemoryStick, Zap } from "lucide-react";
 import { fontFamily, T } from "../theme";
 
-// The ROG dashboard (ipad/ExtendDisplay/DashboardView.swift), 1180 x 820:
+// The ROG dashboard (ipad/Wingman/DashboardView.swift), 1180 x 820:
 // processor, graphics, memory and battery cards with big numbers and graphs.
 
 export type DashState = {

@@ -23,7 +23,7 @@ import { fontFamily, T } from "../theme";
 import { AppIcon, CoverArt, SONG, Tile, TileLabel } from "./ui";
 
 // The home screen, a Control Center for the laptop
-// (ipad/ExtendDisplay/ControlCenterView.swift, iPad 4 x 5 grid), 1180 x 820.
+// (ipad/Wingman/ControlCenterView.swift, iPad 4 x 5 grid), 1180 x 820.
 
 export type CCState = {
   tilesIn: number; // 0..1, tiles cascade in

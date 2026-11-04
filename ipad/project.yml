@@ -1,17 +1,19 @@
-# XcodeGen spec: the GitHub Actions build turns this into ExtendDisplay.xcodeproj,
+# XcodeGen spec: the GitHub Actions build turns this into Wingman.xcodeproj,
 # so we never have to edit an Xcode project file by hand on Windows.
-name: ExtendDisplay
+name: Wingman
 options:
   deploymentTarget:
     iOS: "16.0"
 targets:
-  ExtendDisplay:
+  Wingman:
     type: application
     platform: iOS
-    sources: [ExtendDisplay]
+    sources: [Wingman]
     scheme: {}
     settings:
       base:
+        # the app's original id, kept: changing it would make iOS see a new app
+        # (reinstall, pair again, settings lost)
         PRODUCT_BUNDLE_IDENTIFIER: dev.extenddisplay.app
         TARGETED_DEVICE_FAMILY: "1,2"  # iPhone and iPad (the iPhone gets its own home screen)
         SWIFT_VERSION: "5.0"
@@ -20,7 +22,7 @@ targets:
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
     info:
-      path: ExtendDisplay/Info.plist
+      path: Wingman/Info.plist
       properties:
         CFBundleDisplayName: Wingman
         # XcodeGen writes literal 1.0 / 1 unless told to use the build settings
@@ -41,7 +43,7 @@ targets:
         NSLocalNetworkUsageDescription: Connects to Wingman on your laptop over Wi-Fi.
         # announced so the laptop can find the iPad on the Wi-Fi (like AirPlay)
         NSBonjourServices:
-          - _extenddisplay._tcp
+          - _extenddisplay._tcp  # original name, kept: see StreamServer.bonjourType
         # trackpad clicks arrive as pointer events (needed for pointer lock)
         UIApplicationSupportsIndirectInputEvents: true
         # scene-based UIKit startup: SceneDelegate sets a root controller that can

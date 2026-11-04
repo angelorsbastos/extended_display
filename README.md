@@ -70,7 +70,7 @@ Wingman doesn't work with a Mac laptop: the laptop side uses Windows features.
 2. **Download Wingman**: on this page, **Code → Download ZIP**, and unzip it
    somewhere permanent (for example `Documents\Wingman`). Or with git:
    ```bash
-   git clone https://github.com/angelorsbastos/extended_display.git
+   git clone https://github.com/angelorsbastos/wingman.git
    ```
 3. **Install its packages.** Open a terminal in that folder and run, one at a time:
    ```bash
@@ -106,7 +106,7 @@ Wingman doesn't work with a Mac laptop: the laptop side uses Windows features.
    refreshed in SideStore once a week.
 2. In SideStore, **Sources → +**, and add:
    ```
-   https://github.com/angelorsbastos/extended_display/releases/latest/download/source.json
+   https://github.com/angelorsbastos/wingman/releases/latest/download/source.json
    ```
 3. Install **Wingman** from that source and open it. Allow **Local Network**
    when it asks: that's how the laptop finds it on Wi-Fi.

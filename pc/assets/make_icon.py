@@ -9,7 +9,7 @@ import pathlib
 from PIL import Image, ImageDraw
 
 HERE = pathlib.Path(__file__).parent
-IOS_ICON = HERE.parent.parent / "ipad" / "ExtendDisplay" / "Assets.xcassets" / "AppIcon.appiconset" / "icon.png"
+IOS_ICON = HERE.parent.parent / "ipad" / "Wingman" / "Assets.xcassets" / "AppIcon.appiconset" / "icon.png"
 BLUE, WHITE = (47, 107, 255), (243, 243, 245)
 SCALE = 4  # draw big, then shrink: smooth edges
 

@@ -14,6 +14,7 @@ import UIKit
 final class StreamServer {
     static let usbPort: UInt16 = 7000
     static let wifiPort: UInt16 = 7001
+    // the original name, kept so every app version and hub keep finding each other
     static let bonjourType = "_extenddisplay._tcp"
 
     var onConnected: ((Transport) -> Void)?

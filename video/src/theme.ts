@@ -6,7 +6,7 @@ export const { fontFamily } = loadFont("normal", {
   subsets: ["latin", "latin-ext"],
 });
 
-// Wingman's own tokens, copied from ipad/ExtendDisplay/Theme.swift.
+// Wingman's own tokens, copied from ipad/Wingman/Theme.swift.
 export const T = {
   black: "#000000",
   background: "rgb(16,17,20)",

@@ -34,7 +34,7 @@ is needed: Remotion brings its own.
 |---|---|
 | `src/timeline.ts` | All timing, in beats of the music (`beatF(n)`, the drop is frame 180) |
 | `src/sound.ts` | Every sound effect, pinned to a beat or a shot |
-| `src/theme.ts` | Wingman's colours, copied from `ipad/ExtendDisplay/Theme.swift` |
+| `src/theme.ts` | Wingman's colours, copied from `ipad/Wingman/Theme.swift` |
 | `src/stage/IPadStage.tsx` | The one iPad and its 3D camera, from the dark opening through the Dock and Controls |
 | `src/stage/Atmosphere.tsx` | Out-of-focus lights, vignette and film grain |
 | `src/scenes/` | Captions and the other shots: hook, promise, Dock, Controls + Dashboard, iPhone, "and more", end card |

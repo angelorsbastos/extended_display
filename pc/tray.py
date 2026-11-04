@@ -27,7 +27,7 @@ from PIL import Image  # noqa: E402
 import hub  # noqa: E402
 
 ICON = HERE / "assets" / "icon.png"
-MUTEX_NAME = "ExtendDisplayHub"
+MUTEX_NAME = "WingmanHub"
 ERROR_ALREADY_EXISTS = 183
 
 
@@ -60,7 +60,7 @@ def main():
         icon.stop()
 
     icon = pystray.Icon(
-        "ExtendDisplay", Image.open(ICON), "Wingman",
+        "Wingman", Image.open(ICON), "Wingman",
         menu=pystray.Menu(
             pystray.MenuItem(lambda _item: status["text"], None, enabled=False),
             pystray.MenuItem("Open log", lambda: os.startfile(LOG)),
