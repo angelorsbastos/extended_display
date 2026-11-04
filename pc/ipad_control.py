@@ -2,12 +2,17 @@
 Bluetooth (see bluetooth_hid.py), until Ctrl+Alt+I is pressed again.
 
 How: a registered hotkey switches over. While switched, low-level keyboard and
-mouse hooks catch all input before Windows sees it, and forward it to the iPad
-instead. The hooks exist only while switched, so they can never slow down the
-laptop's own pointer. The pointer waits in the middle of the screen and its
-movements are sent as mouse movement; keys are sent by position (HID usage),
-so the iPad's keyboard layout setting decides the characters, like a real
-keyboard.
+mouse hooks catch all input before Windows sees it. The hooks exist only while
+switched, so they can never slow down the laptop's own pointer. Keys are sent
+by position (HID usage), so the iPad's keyboard layout setting decides the
+characters, like a real keyboard.
+
+The touchpad goes to the iPad as a real multi-touch trackpad: touchpad.py
+reads the raw fingers and bluetooth_hid.py forwards them, so the pointer,
+scrolling and gestures are the iPad's own. The mouse hook then only keeps the
+laptop's pointer still. Without a precision touchpad, pointer movement, clicks
+and the wheel are sent as a mouse instead (the pointer waits mid-screen and
+its movements are forwarded).
 
 Keys map like Extend Display does the other way round: Ctrl -> Cmd (so Ctrl+C
 copies on the iPad), Alt -> Option, Win -> Ctrl, AltGr -> right Option.
@@ -16,9 +21,7 @@ Three/four-finger gestures never pass through the hooks: Windows' shell takes
 them. While switched, a TouchpadGesturesController (Windows 11's official way
 for remote-desktop-style apps) claims them instead, which only works while one
 of our windows is in front, so the hint window is brought to the front and the
-previous window gets the focus back afterwards. touchpad.py reads the fingers
-and turns swipes into iPad shortcuts: up = Home (Cmd+H), left/right = previous
-app (Cmd+Tab).
+previous window gets the focus back afterwards.
 """
 import ctypes
 import queue
@@ -75,9 +78,6 @@ MOUSE_BUTTON_MESSAGES = {0x0201: (1, True), 0x0202: (1, False), 0x0204: (2, True
 SCAN_TO_HID = {scan: usage for usage, scan in inputs.HID_TO_SCAN.items() if usage != 49}
 ALTGR_FAKE_CTRL = 0x21D  # Windows' extra left-Ctrl that comes with every AltGr press
 
-CMD = 1 << (227 - 224)  # modifier bit of the left Cmd key in a keyboard report
-KEY_H, KEY_TAB = 0x0B, 0x2B
-SWIPES = {"up": (CMD, KEY_H), "left": (CMD, KEY_TAB), "right": (CMD, KEY_TAB)}  # iPad shortcuts
 ALL_GLOBAL_GESTURES = 0x3F  # TouchpadGlobalGestureKinds: 3/4/5-finger swipes and taps
 
 POINTER_SCALE = 1.0  # laptop pointer movement -> iPad pointer movement
@@ -98,7 +98,8 @@ class Controller:
         self.stopping = None  # timer that turns Bluetooth off after switching back
         self.gestures = None  # TouchpadGesturesController, made on the hotkey thread
         self.previous_window = None
-        self.touchpad = touchpad.Touchpad(self._on_swipe)
+        self.touchpad = touchpad.Touchpad(lambda *_: None, self._on_fingers)
+        self.trackpad_mode = False  # the touchpad goes to the iPad as a trackpad (else as a mouse)
         threading.Thread(target=self._run, name="ipad-control", daemon=True).start()
 
     # ---- hotkey thread -----------------------------------------------------------
@@ -146,7 +147,8 @@ class Controller:
         self._mouse_proc = HOOKPROC(self._on_mouse)
         self.hooks = [user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._keyboard_proc, module, 0),
                       user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_proc, module, 0)]
-        self.bluetooth.start()
+        self.trackpad_mode = self.touchpad.problem is None
+        self.bluetooth.start(trackpad=self.trackpad_mode)
         # 3/4-finger gestures: ours instead of Windows', while our hint is in front
         self.previous_window = user32.GetForegroundWindow()
         if self.gestures:
@@ -164,6 +166,7 @@ class Controller:
         self.active = False
         self.bluetooth.send_keys(0, [])
         self.bluetooth.set_buttons(0)
+        self.bluetooth.send_touch({}, False)  # lift any fingers still down
         # what's still held went to the iPad: its releases are nobody's now
         self.swallow = set(self.ipad_held)
         self.ipad_held = {}
@@ -202,23 +205,24 @@ class Controller:
 
     def _stay_in_front(self):
         """Windows only hands gestures to the app in front; if something else
-        took the front (a notification, a new window), take it back."""
+        took the front (a notification, a new window), take it back.
+        In trackpad mode the still pointer also waits on the hint: two-finger
+        scrolling isn't mouse input the hook can stop, Windows sends it to the
+        window under the pointer, and the hint ignores it."""
         started = self.started
         while self.active and self.started == started:
             if self.hint.hwnd and user32.GetForegroundWindow() != self.hint.hwnd:
                 bring_to_front(self.hint.hwnd)
-            time.sleep(0.5)
+            if self.trackpad_mode and self.hint.hwnd:
+                rect = wintypes.RECT()
+                if user32.GetWindowRect(ctypes.c_void_p(self.hint.hwnd), ctypes.byref(rect)) and rect.right > rect.left:
+                    user32.SetCursorPos((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+            time.sleep(0.25)
 
-    def _on_swipe(self, fingers, kind):
-        """A 3/4-finger swipe on the laptop's touchpad (touchpad thread)."""
-        if not self.active or kind not in SWIPES:
-            return
-        modifiers, usage = SWIPES[kind]
-        self.bluetooth.send_keys(modifiers, [usage])
-        # then back to whatever is really held
-        held = self.ipad_held.values()
-        self.bluetooth.send_keys(sum(1 << (u - 224) for u in held if u >= 224), [u for u in held if u < 224])
-        print(f"{fingers}-finger swipe {kind} -> iPad")
+    def _on_fingers(self, touching, clicked):
+        """Every touchpad report (touchpad thread): the fingers go to the iPad."""
+        if self.active and self.trackpad_mode:
+            self.bluetooth.send_touch(touching, clicked)
 
     # ---- hooks (run on the hotkey thread; must be quick) --------------------------
 
@@ -266,6 +270,8 @@ class Controller:
         m = MSLLHOOKSTRUCT.from_address(data)
         if m.flags & LLMHF_INJECTED:
             return user32.CallNextHookEx(None, code, message, data)
+        if self.trackpad_mode:
+            return 1  # the fingers go to the iPad as a trackpad; just keep the pointer still
         if message == WM_MOUSEMOVE:
             # the pointer stays at the anchor, so this is how far it would have moved
             dx, dy = m.pt.x - self.anchor[0], m.pt.y - self.anchor[1]
