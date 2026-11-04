@@ -60,6 +60,7 @@ import ipad_control
 import layout
 import monitors
 import nowplaying
+import osd
 import secure
 import stats
 import tailnet
@@ -280,6 +281,7 @@ class ClipboardSync:
         print(f"clipboard <- iPad ({message['kind']})")
         if message.get("paste"):  # "Paste on laptop" in the iPad's clipboard history
             actions.press("ctrl", "v")
+            osd.show("paste", f"Pasted from the {self.session.name}")
 
 
 class ControlsWatch:
@@ -309,6 +311,34 @@ class ControlsWatch:
                 return
             self.refresh.wait(2)
             self.refresh.clear()
+
+
+MEDIA_NOTES = {"play_pause": ("play", "Play or pause"), "next": ("next", "Next track"),
+               "previous": ("previous", "Previous track")}
+
+
+def note_control(name, value):
+    """Show on the laptop's screen what a device just changed (osd.py)."""
+    on = bool(value)
+    if name in ("volume", "brightness"):
+        osd.show(name, name.capitalize(), int(value))
+    elif name == "muted":
+        osd.show("mute" if on else "volume", "Sound off" if on else "Sound on")
+    elif name == "mic_muted":
+        osd.show("mic_off" if on else "mic", "Microphone off" if on else "Microphone on")
+    elif name == "dark_mode":
+        osd.show("dark", f"Dark mode {'on' if on else 'off'}")
+    elif name in ("wifi", "bluetooth"):
+        osd.show(name, f"{'Wi-Fi' if name == 'wifi' else 'Bluetooth'} {'on' if on else 'off'}")
+    elif name == "keep_awake":
+        osd.show("awake", "Staying awake" if on else "Can sleep again")
+    elif name == "power_plan":
+        plans, _ = controls._power_plans()
+        plan = next((p["name"] for p in plans if p["id"] == value), "changed")
+        osd.show("plan", f"Power plan: {plan}")
+    elif name in ("lock", "sleep", "restart", "shutdown"):
+        words = {"lock": "Locking", "sleep": "Going to sleep", "restart": "Restarting", "shutdown": "Shutting down"}
+        osd.show("lock" if name == "lock" else "power", words[name])
 
 
 class StatsWatch:
@@ -494,6 +524,7 @@ def handle(session):
                     "channels": audio.CHANNELS, "config": base64.b64encode(config).decode()}),
                 on_packet=lambda packet: session.send(MSG_AUDIO, packet))
         print("sound on the iPad" if on else "sound on the laptop only")
+        osd.show("speaker", f"Sound also on the {session.name}" if on else "Sound on the laptop only")
 
     def rotate(portrait):
         """The iPad turned: turn the Extend screen to match (Mirror can't rotate
@@ -556,7 +587,12 @@ def handle(session):
             elif kind == "control":
                 print(f"control: {msg.get('name')} = {msg.get('value')}")
                 try:
+                    if msg.get("name") in ("lock", "sleep", "restart", "shutdown"):
+                        note_control(msg.get("name"), True)  # before: afterwards there's no screen
+                        time.sleep(0.8)
                     controls.apply(msg.get("name"), msg.get("value"))
+                    if msg.get("name") not in ("lock", "sleep", "restart", "shutdown"):
+                        note_control(msg.get("name"), msg.get("value"))
                 except Exception as e:  # COM, WMI and WinRT each raise their own errors
                     print(f"control {msg.get('name')} failed: {e}")
                     session.send_json({"type": "error", "message": f"Couldn't change that: {e}"})
@@ -583,10 +619,13 @@ def handle(session):
                 print(f"shortcut: {msg['id']}")
                 try:
                     actions.run_shortcut(by_id[msg["id"]])
+                    osd.show("shortcut", by_id[msg["id"]]["title"])
                 except OSError as e:  # e.g. the app it opens isn't installed
                     print(f"shortcut {msg['id']} failed: {e}")
             elif kind == "media" and msg.get("action") in actions.MEDIA_KEYS:
                 actions.media(msg["action"])
+                if msg["action"] in MEDIA_NOTES:
+                    osd.show(*MEDIA_NOTES[msg["action"]])
             elif kind == "save_shortcuts":
                 try:
                     shortcuts = actions.save_shortcuts(msg.get("shortcuts"))
@@ -599,7 +638,9 @@ def handle(session):
                 session.send_json({"type": "hello", "shortcuts": actions.load_shortcuts()})
             elif kind == "try_shortcut":
                 try:
-                    actions.run_shortcut(actions.check_shortcut(msg.get("shortcut")))
+                    tried = actions.check_shortcut(msg.get("shortcut"))
+                    actions.run_shortcut(tried)
+                    osd.show("shortcut", f"Trying {tried['title']}")
                 except (ValueError, OSError) as e:
                     session.send_json({"type": "error", "message": f"That didn't work: {e}"})
             elif kind == "list_apps":
