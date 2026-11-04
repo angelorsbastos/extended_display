@@ -23,6 +23,7 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     watch_controls {on}, control {name, value} (see controls.apply),
                     save_shortcuts {shortcuts} (the whole list, see actions.save_shortcuts),
                     try_shortcut {shortcut} (run one without saving), list_apps,
+                    app_icon {open} (-> app_icon {open, png}: base64, "" if none),
                     watch_stats {on} (the Dashboard is open: send stats every 2 s),
                     laptop_input {on} (switch Ctrl+Alt+I from the device),
                     timer_done (the Dock's timer ran out: indicator and sound here),
@@ -57,6 +58,7 @@ import clipboard
 import controls
 import discovery
 import files
+import icons
 import inputs
 import ipad_control
 import layout
@@ -633,6 +635,10 @@ def handle(session):
                     osd.show(*MEDIA_NOTES[msg["action"]])
             elif kind == "save_shortcuts":
                 try:
+                    # an app, file or folder gets its own icon, unless the iPad chose a symbol ("")
+                    for wanted in msg.get("shortcuts") or []:
+                        if isinstance(wanted, dict) and wanted.get("open") and "image" not in wanted:
+                            wanted["image"] = controls._worker.submit(icons.png, wanted["open"]).result() or ""
                     shortcuts = actions.save_shortcuts(msg.get("shortcuts"))
                 except (ValueError, OSError) as e:
                     session.send_json({"type": "error", "message": f"Couldn't save the shortcuts: {e}"})
@@ -648,6 +654,14 @@ def handle(session):
                     osd.show("shortcut", f"Trying {tried['title']}")
                 except (ValueError, OSError) as e:
                     session.send_json({"type": "error", "message": f"That didn't work: {e}"})
+            elif kind == "app_icon":  # the shortcut editor's app list, one icon at a time
+                def send_icon(target=str(msg.get("open", ""))):
+                    try:
+                        png = controls._worker.submit(icons.png, target).result()
+                        session.send_json({"type": "app_icon", "open": target, "png": png or ""})
+                    except OSError:
+                        pass
+                threading.Thread(target=send_icon, daemon=True).start()
             elif kind == "list_apps":
                 def send_apps():
                     try:

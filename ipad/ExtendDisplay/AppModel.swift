@@ -41,6 +41,8 @@ final class AppModel: ObservableObject {
     @Published var laptopInput = false
     /// The laptop's Start menu apps, for the shortcut editor (asked for with requestApps).
     @Published var laptopApps: [LaptopApp]?
+    /// Laptop apps' own icons (base64 PNG; "" = none), asked for one by one (requestAppIcon).
+    @Published var appIcons: [String: String] = [:]
     /// The Dashboard's latest numbers, and the last few minutes of them for the graphs.
     @Published var stats: LaptopStats?
     @Published var statsHistory: [LaptopStats] = []
@@ -58,12 +60,15 @@ final class AppModel: ObservableObject {
     /// (on by default: nobody hears the laptop) and at home (off by default).
     @Published private(set) var soundOnIPad = false
     /// The clipboard panel over the video (four-finger tap).
-    @Published var showingClipboard = false {
+    @Published var showingClipboard = false {  // the quick panel over the video
         didSet {
             // keyboard and trackpad work the panel, not the laptop, while it's open
             if case .video = screen { input.active = !showingClipboard }
+            updateControlsWatch()  // its Controls tab shows volume and brightness
         }
     }
+    enum PanelTab { case controls, shortcuts, clipboard }
+    @Published var panelTab = PanelTab.controls
 
     let displayLayer = AVSampleBufferDisplayLayer()
     let clipboardHistory = ClipboardHistory()
@@ -217,7 +222,8 @@ final class AppModel: ObservableObject {
     /// The laptop sends its settings (volume, brightness, battery, temperature)
     /// every 2 s while a screen that shows them is open: home, Controls, Dock.
     private func updateControlsWatch() {
-        let watching = screen == .home || screen == .controls || screen == .dock
+        var watching = screen == .home || screen == .controls || screen == .dock
+        if case .video = screen, showingClipboard { watching = true }
         server.send(json: ["type": "watch_controls", "on": watching])
     }
 
@@ -255,6 +261,12 @@ final class AppModel: ObservableObject {
 
     func requestApps() {
         server.send(json: ["type": "list_apps"])
+    }
+
+    func requestAppIcon(_ open: String) {
+        guard appIcons[open] == nil else { return }
+        appIcons[open] = ""  // asked: don't ask again while waiting
+        server.send(json: ["type": "app_icon", "open": open])
     }
 
     func media(_ action: String) {
@@ -420,6 +432,10 @@ final class AppModel: ObservableObject {
                 self.laptopInput = message.on ?? false
             case "apps":
                 self.laptopApps = message.apps ?? []
+            case "app_icon":
+                if let open = message.open {
+                    self.appIcons[open] = message.png ?? ""
+                }
             case "stats":
                 if let stats = message.stats {
                     self.stats = stats

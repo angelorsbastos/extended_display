@@ -330,8 +330,7 @@ struct ControlCenterView: View {
                             model.run(shortcut)
                         } label: {
                             VStack(spacing: 4) {
-                                Image(systemName: shortcut.icon)
-                                    .font(.system(size: 18, weight: .semibold))
+                                ShortcutIcon(shortcut: shortcut, size: 18)
                                 Text(shortcut.title)
                                     .font(.system(size: 10))
                                     .foregroundStyle(Theme.secondary)

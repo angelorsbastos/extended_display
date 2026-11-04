@@ -71,6 +71,11 @@ def check_shortcut(s):
         if not isinstance(value, str) or not value.strip() or len(value) > limit:
             raise ValueError(f"shortcut {field} missing or too long")
         clean[field] = value.strip()
+    image = s.get("image")  # base64 PNG of the app's own icon; "" = use the symbol
+    if image is not None:
+        if not isinstance(image, str) or len(image) > 400_000:
+            raise ValueError(f"“{clean['title']}”: bad icon")
+        clean["image"] = image
     actions = [a for a in ("keys", "open", "run", "lock") if s.get(a)]
     if len(actions) != 1:
         raise ValueError(f"“{clean['title']}” needs exactly one action")

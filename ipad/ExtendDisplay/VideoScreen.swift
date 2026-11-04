@@ -14,7 +14,10 @@ struct VideoScreen: View {
             VideoView(displayLayer: model.displayLayer, videoSize: model.videoSize,
                       onTouches: { model.touches($0) },
                       onThreeFingerTap: { model.goHome() },
-                      onFourFingerTap: { withAnimation { model.showingClipboard = true } })
+                      onFourFingerTap: {
+                          model.panelTab = .clipboard
+                          withAnimation { model.showingClipboard = true }
+                      })
 
             if let error = model.videoError {
                 status(icon: "exclamationmark.triangle", text: error)
@@ -25,7 +28,7 @@ struct VideoScreen: View {
             if showHint {
                 VStack {
                     Spacer()
-                    Text("Tap with three fingers to go back, four for the clipboard")
+                    Text("The small button has controls and shortcuts; three fingers go back")
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20)
@@ -37,8 +40,12 @@ struct VideoScreen: View {
                 .allowsHitTesting(false)
             }
 
+            if model.receivingVideo && !model.showingClipboard {
+                QuickButton(model: model)
+            }
+
             if model.showingClipboard {
-                ClipboardPanel(model: model)
+                QuickPanel(model: model)
             }
         }
         .ignoresSafeArea()
@@ -69,6 +76,56 @@ struct VideoScreen: View {
                 .buttonStyle(.borderedProminent)
         }
         .foregroundStyle(.white)
+    }
+}
+
+/// A small, faint button floating over the laptop's picture: tap for the quick
+/// panel (controls, shortcuts, clipboard). Drag it anywhere; it settles against
+/// the nearer side, and stays where it was put next time.
+struct QuickButton: View {
+    @ObservedObject var model: AppModel
+    @AppStorage("quickButton.x") private var x = 0.97   // fractions of the screen
+    @AppStorage("quickButton.y") private var y = 0.12
+    @State private var dragging: CGSize = .zero
+    @State private var pressed = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let size = geometry.size
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                .opacity(pressed || dragging != .zero ? 1 : 0.4)
+                .position(x: min(max(x * size.width + dragging.width, 24), size.width - 24),
+                          y: min(max(y * size.height + dragging.height, 24), size.height - 24))
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        pressed = true
+                        dragging = drag.translation
+                    }
+                    .onEnded { drag in
+                        pressed = false
+                        let moved = hypot(drag.translation.width, drag.translation.height)
+                        if moved < 6 {  // a tap
+                            dragging = .zero
+                            model.panelTab = .controls
+                            model.tap()
+                            withAnimation { model.showingClipboard = true }
+                            return
+                        }
+                        let endX = (x * size.width + drag.translation.width) / size.width
+                        let endY = (y * size.height + drag.translation.height) / size.height
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            x = endX < 0.5 ? 0.03 : 0.97  // settle against the nearer side
+                            y = min(max(endY, 0.05), 0.95)
+                            dragging = .zero
+                        }
+                    })
+                .accessibilityLabel("Quick controls")
+        }
     }
 }
 
