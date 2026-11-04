@@ -170,8 +170,35 @@ def _mouse(flags, dx=0, dy=0, data=0):
     return i
 
 
+_move_rest = [0.0, 0.0]  # fractions of a pixel not sent yet
+
+
 def mouse_move(dx, dy):
-    _send(_mouse(MOUSEEVENTF_MOVE, round(dx), round(dy)))
+    # keep the fractions: slow finger movements (the iPhone trackpad) are mostly
+    # fractions of a pixel, and rounding each one away would stall the pointer
+    x, y = dx + _move_rest[0], dy + _move_rest[1]
+    whole_x, whole_y = round(x), round(y)
+    _move_rest[:] = [x - whole_x, y - whole_y]
+    if whole_x or whole_y:
+        _send(_mouse(MOUSEEVENTF_MOVE, whole_x, whole_y))
+
+
+KEYEVENTF_UNICODE = 0x4
+
+
+def type_text(text):
+    """Type text as characters (not keys), so accents and emoji arrive as they
+    are, whatever the laptop's keyboard layout."""
+    presses = []
+    units = str(text)[:2000].encode("utf-16-le")
+    for i in range(0, len(units), 2):
+        unit = int.from_bytes(units[i:i + 2], "little")
+        for flags in (KEYEVENTF_UNICODE, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP):
+            press = INPUT(type=INPUT_KEYBOARD)
+            press.u.ki = KEYBDINPUT(0, unit, flags, 0, None)
+            presses.append(press)
+    if presses:
+        _send(*presses)
 
 
 _held = set()  # keys / buttons currently pressed through us, to release on disconnect

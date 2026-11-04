@@ -172,6 +172,7 @@ final class StreamServer {
         let link = Link(connection, viaTailscale ? .remote : transport)
         connection.start(queue: queue)
         sendJSON(["type": "identity", "ipad_id": PairingStore.ipadId, "ipad_name": deviceName,
+                  "device": UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad",
                   "paired_laptops": PairingStore.laptopIds], on: link)
         if link.ready {
             activate(link)

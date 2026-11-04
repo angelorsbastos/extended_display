@@ -179,12 +179,15 @@ class Sender:
 # ---- the outbox: "Send to > iPad" -> the running hub -------------------------------
 
 _active = {"sender": None}  # the connected iPad's Sender, set by hub.handle
+NOBODY = object()  # for set_active_sender(only_if=NOBODY): only if no device has it yet
 
 
 def set_active_sender(sender, only_if=None):
     """Make `sender` the one "Send to > iPad" uses. With only_if, change it only
-    while that one is still active (a newer connection may have replaced it)."""
-    if only_if is None or _active["sender"] is only_if:
+    while that one is still active (a newer connection may have replaced it);
+    only_if=NOBODY: only if nobody is."""
+    current = _active["sender"]
+    if only_if is None or current is only_if or (only_if is NOBODY and current is None):
         _active["sender"] = sender
 
 

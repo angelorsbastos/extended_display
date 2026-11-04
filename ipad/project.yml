@@ -13,7 +13,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.extenddisplay.app
-        TARGETED_DEVICE_FAMILY: "2"  # iPad only
+        TARGETED_DEVICE_FAMILY: "1,2"  # iPhone and iPad (the iPhone gets its own home screen)
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # the CI build overrides these with the run number, so every build is newer
@@ -29,6 +29,10 @@ targets:
         UILaunchScreen: {}  # without this iOS shows the app letterboxed
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
+        UISupportedInterfaceOrientations:  # iPhone: no upside-down
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight

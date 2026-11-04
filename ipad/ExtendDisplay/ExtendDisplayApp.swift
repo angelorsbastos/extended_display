@@ -102,7 +102,11 @@ struct RootView: View {
                 Color.black.ignoresSafeArea()
                 switch model.screen {
                 case .home:
-                    HomeView(model: model)
+                    if isPhone {
+                        PhoneHomeView(model: model)
+                    } else {
+                        HomeView(model: model)
+                    }
                 case .video:
                     VideoScreen(model: model)
                 case .shortcuts:
@@ -115,6 +119,10 @@ struct RootView: View {
                     FilesView(model: model, files: model.files)
                 case .dashboard:
                     DashboardView(model: model)
+                case .trackpad:
+                    TrackpadView(model: model)
+                case .dock:
+                    DockView(model: model)
                 }
                 FileNoteBanner(files: model.files)
                 if let laptop = model.pairingLaptop {
@@ -124,9 +132,17 @@ struct RootView: View {
             .onAppear { model.updateOrientation(size: geometry.size) }
             .onChange(of: geometry.size) { size in model.updateOrientation(size: size) }
         }
-        .ignoresSafeArea()
+        // the iPhone keeps clear of the Dynamic Island and rounded corners
+        .ignoresSafeArea(.container, edges: isPhone ? [] : .all)
         .preferredColorScheme(.dark)
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+    }
+}
+
+extension View {
+    /// Screen margins: roomy on the iPad, tight on the iPhone.
+    func screenPadding() -> some View {
+        padding(isPhone ? 16 : 40)
     }
 }

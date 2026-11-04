@@ -26,7 +26,7 @@ struct DashboardView: View {
                 Spacer()
             }
         }
-        .padding(40)
+        .screenPadding()
         .foregroundStyle(.white)
     }
 

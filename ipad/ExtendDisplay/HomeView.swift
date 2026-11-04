@@ -202,9 +202,11 @@ struct ConnectionBadge: View {
             Image(systemName: icon)
                 .font(.system(size: transport == nil ? 9 : 13, weight: .semibold))
                 .foregroundStyle(transport == nil ? Color.gray : Color.green)
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.white)
+            if !isPhone {  // no room on a phone's title bar: the icon and its colour say it
+                Text(text)
+                    .font(.callout)
+                    .foregroundStyle(.white)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
