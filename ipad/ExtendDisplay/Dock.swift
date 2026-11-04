@@ -2,66 +2,52 @@ import AudioToolbox
 import Combine
 import SwiftUI
 
-/// The Dock: for an iPad or iPhone standing next to the laptop. At rest there
-/// is only a huge clock, the song that's playing (nothing when nothing plays),
-/// a running timer, and a slow glow in the song's colour, on true black. A tap
-/// brings up the controls (music, timer, up to 6 chosen shortcuts), which fade
-/// away again by themselves. Night mode turns it all dim red. The clock drifts a
-/// few points every minute so it can't burn into the screen.
+/// The Dock: for an iPad or iPhone standing next to the laptop, mostly on its
+/// side. At rest: a huge clock with the date and a running timer, the song
+/// that's playing (nothing when nothing plays) and six chosen shortcuts, on true
+/// black with a slow glow in the song's colour. A tap on empty space brings up
+/// the controls (music, every shortcut in a sliding row, the timer), which fade
+/// away by themselves. Night (dim red) switches itself on at 22:00 and off at
+/// 7:00, and can be switched by hand. Everything that changes eases: the
+/// minutes roll, the burn-in drift glides, night fades in.
 struct DockView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var timer: DockTimer
     @State private var showingControls = false
     @State private var hideControls: DispatchWorkItem?
     @State private var pickingShortcuts = false
-    @AppStorage("dock.night") private var nightSetting = NightMode.auto.rawValue
+    @State private var pickingTimer = false
     @AppStorage("dock.shortcuts") private var chosenIds = ""  // comma-separated; empty: the first six
+    // a hand-picked night setting, until the next automatic switch (22:00 / 7:00)
+    @AppStorage("dock.nightOverride") private var nightOverride = -1  // -1 none, 0 day, 1 night
+    @AppStorage("dock.nightOverrideUntil") private var nightOverrideUntil = 0.0
 
-    enum NightMode: String { case auto, on, off }
-
-    static let controlsSeconds = 5.0
+    static let controlsSeconds = 6.0
+    static let nightRed = Color(red: 0.78, green: 0.2, blue: 0.18)
+    static let nightDim = Color(red: 0.43, green: 0.12, blue: 0.11)
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
+            let night = isNight(context.date)
             GeometryReader { geometry in
-                let wide = geometry.size.width > geometry.size.height
-                let night = isNight(context.date)
                 ZStack {
                     Color.black
                     glow(night: night, size: geometry.size)
-                    Group {
-                        if wide {
-                            HStack(alignment: .center, spacing: 40) {
-                                clock(context.date, size: geometry.size, night: night)
-                                Spacer(minLength: 0)
-                                song(night: night).frame(maxWidth: geometry.size.width * 0.38)
-                            }
-                            .padding(.horizontal, isPhone ? 36 : 64)
-                        } else {
-                            VStack(alignment: .leading, spacing: 40) {
-                                clock(context.date, size: geometry.size, night: night)
-                                song(night: night)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 28)
-                        }
+                    resting(context.date, size: geometry.size, night: night)
+                        .offset(drift(context.date))
+                        .animation(.easeInOut(duration: 8), value: Calendar.current.component(.minute, from: context.date))
+                        .opacity(showingControls ? 0.25 : 1)
+                    if showingControls {
+                        controls(night: night, size: geometry.size)
+                            .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     }
-                    .offset(drift(context.date))
-                    .padding(.bottom, showingControls ? (wide ? 150 : 260) : 0)
-                    .animation(.easeInOut(duration: 0.45), value: showingControls)
-
-                    VStack {
-                        Spacer()
-                        if showingControls {
-                            controls(night: night)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.35), value: showingControls)
                 }
+                .animation(.easeInOut(duration: 0.4), value: showingControls)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
             }
+            .foregroundStyle(night ? Self.nightRed : Theme.text)
+            .animation(.easeInOut(duration: 2.5), value: night)
         }
         .ignoresSafeArea()
         .statusBarHidden()
@@ -74,48 +60,104 @@ struct DockView: View {
                 chosenIds = ids.joined(separator: ",")
             }
         }
+        .sheet(isPresented: $pickingTimer) {
+            TimerPicker { seconds in timer.start(seconds: seconds) }
+        }
     }
 
     // MARK: at rest
 
-    private func clock(_ date: Date, size: CGSize, night: Bool) -> some View {
-        let big = min(size.width, size.height) * (size.width > size.height ? 0.42 : 0.3)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(date, format: .dateTime.hour().minute())
-                .font(.system(size: big, weight: .thin))
+    @ViewBuilder
+    private func resting(_ date: Date, size: CGSize, night: Bool) -> some View {
+        if size.width > size.height {
+            // on its side (the usual): clock on the left, music and shortcuts on the right
+            HStack(alignment: .center, spacing: size.width * 0.05) {
+                clock(date, height: size.height * (isPhone ? 0.44 : 0.34), night: night)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: size.height * 0.08) {
+                    song(night: night)
+                    shortcutGrid(columns: 3, night: night)
+                }
+                .frame(width: size.width * (isPhone ? 0.34 : 0.32), alignment: .leading)
+            }
+            .padding(.horizontal, size.width * 0.06)
+            .padding(.vertical, size.height * 0.08)
+        } else {
+            // upright: clock on top, music under it, shortcuts at the bottom
+            VStack(alignment: .leading, spacing: size.height * 0.05) {
+                Spacer(minLength: 0)
+                clock(date, height: size.width * 0.3, night: night)
+                song(night: night)
+                Spacer(minLength: 0)
+                shortcutGrid(columns: isPhone ? 3 : 6, night: night)
+            }
+            .padding(.horizontal, size.width * 0.08)
+            .padding(.vertical, size.height * 0.07)
+        }
+    }
+
+    private func clock(_ date: Date, height: CGFloat, night: Bool) -> some View {
+        let time = date.formatted(.dateTime.hour().minute())
+        return VStack(alignment: .leading, spacing: height * 0.04) {
+            Text(time)
+                .font(.system(size: height, weight: .thin))
                 .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.easeInOut(duration: 0.9), value: time)  // the minutes roll over gently
                 .minimumScaleFactor(0.4)
                 .lineLimit(1)
-                .foregroundStyle(night ? Self.nightRed : Theme.text)
             Text(date, format: .dateTime.weekday(.wide).day().month(.wide))
-                .font(.system(size: isPhone ? 17 : 22))
+                .font(.system(size: max(15, height * 0.13)))
                 .foregroundStyle(night ? Self.nightDim : Theme.secondary)
-                .padding(.leading, 6)
-            if timer.isRunning || timer.finished {
+                .padding(.leading, height * 0.04)
+            if timer.isRunning || timer.isPaused || timer.finished {
                 Label(timer.finished ? "Time's up" : timer.remainingText,
-                      systemImage: timer.finished ? "bell.fill" : "timer")
-                    .font(.system(size: isPhone ? 17 : 22, weight: .medium))
+                      systemImage: timer.finished ? "bell.fill" : timer.isPaused ? "pause.fill" : "timer")
+                    .font(.system(size: max(15, height * 0.13), weight: .medium))
                     .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.easeInOut(duration: 0.3), value: timer.remainingText)
                     .foregroundStyle(timer.finished ? Theme.warm : night ? Self.nightRed : Theme.text)
-                    .padding(.leading, 6)
-                    .padding(.top, 8)
+                    .padding(.leading, height * 0.04)
             }
         }
     }
 
     @ViewBuilder private func song(night: Bool) -> some View {
         if let playing = model.nowPlaying, !playing.title.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
+                EqualizerBars(playing: playing.playing, color: night ? Self.nightRed : Theme.text)
+                    .padding(.bottom, 6)
                 Text(playing.title)
-                    .font(.system(size: isPhone ? 22 : 30, weight: .semibold))
+                    .font(.system(size: isPhone ? 19 : 28, weight: .semibold))
                     .lineLimit(2)
-                    .foregroundStyle(night ? Self.nightRed : Theme.text)
                 Text(playing.artist.isEmpty ? playing.app : playing.artist)
-                    .font(.system(size: isPhone ? 15 : 19))
+                    .font(.system(size: isPhone ? 14 : 18))
                     .foregroundStyle(night ? Self.nightDim : Theme.secondary)
                     .lineLimit(1)
-                EqualizerBars(playing: playing.playing, color: night ? Self.nightRed : Theme.text)
-                    .padding(.top, 8)
+            }
+            .animation(.easeInOut(duration: 0.6), value: playing.title)
+        }
+    }
+
+    /// The six chosen shortcuts, quiet, one tap each.
+    private func shortcutGrid(columns: Int, night: Bool) -> some View {
+        let side: CGFloat = isPhone ? 50 : 68
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: isPhone ? 12 : 16), count: columns),
+                         alignment: .leading, spacing: isPhone ? 12 : 16) {
+            ForEach(chosenShortcuts) { shortcut in
+                Button {
+                    model.tap()
+                    model.run(shortcut)
+                } label: {
+                    Image(systemName: shortcut.icon)
+                        .font(.system(size: side * 0.36, weight: .semibold))
+                        .frame(width: side, height: side)
+                        .background(RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
+                            .fill(night ? Self.nightRed.opacity(0.12) : Color.white.opacity(0.07)))
+                }
+                .buttonStyle(PressableStyle())
+                .accessibilityLabel(shortcut.title)
             }
         }
     }
@@ -123,9 +165,9 @@ struct DockView: View {
     /// A slow breathing light behind everything, in a colour of the song's own.
     private func glow(night: Bool, size: CGSize) -> some View {
         let colour = night ? Color(red: 0.6, green: 0.05, blue: 0.05) : songColour
-        return BreathingGlow(colour: colour.opacity(night ? 0.18 : 0.32), diameter: max(size.width, size.height) * 0.9)
-            .position(x: size.width * 0.22, y: size.height * 0.25)
-            .animation(.easeInOut(duration: 1.5), value: model.nowPlaying?.title)
+        return BreathingGlow(colour: colour.opacity(night ? 0.16 : 0.3), diameter: max(size.width, size.height) * 0.9)
+            .position(x: size.width * 0.22, y: size.height * 0.3)
+            .animation(.easeInOut(duration: 2), value: model.nowPlaying?.title)
             .allowsHitTesting(false)
     }
 
@@ -140,111 +182,128 @@ struct DockView: View {
 
     // MARK: controls
 
-    private func controls(night: Bool) -> some View {
-        VStack(spacing: 18) {
+    /// Player on top, every shortcut in a sliding row, the timer, then the
+    /// Dock's own buttons. Fades away after a few seconds without touches.
+    private func controls(night: Bool, size: CGSize) -> some View {
+        VStack(alignment: .leading, spacing: isPhone ? 14 : 22) {
             if let playing = model.nowPlaying {  // nothing to control when nothing plays
-                HStack(spacing: 34) {
-                    roundButton("backward.fill", size: 54) { model.media("previous") }
-                    roundButton(playing.playing ? "pause.fill" : "play.fill", size: 70, filled: true) {
-                        model.media("play_pause")
+                HStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(playing.title).font(.system(size: isPhone ? 16 : 20, weight: .semibold)).lineLimit(1)
+                        Text(playing.artist.isEmpty ? playing.app : playing.artist)
+                            .font(.system(size: 13)).foregroundStyle(night ? Self.nightDim : Theme.secondary).lineLimit(1)
                     }
-                    roundButton("forward.fill", size: 54) { model.media("next") }
+                    Spacer(minLength: 8)
+                    roundButton("backward.fill", size: isPhone ? 46 : 56) { model.media("previous") }
+                    roundButton(playing.playing ? "pause.fill" : "play.fill", size: isPhone ? 58 : 70, filled: true,
+                                night: night) { model.media("play_pause") }
+                    roundButton("forward.fill", size: isPhone ? 46 : 56) { model.media("next") }
                 }
             }
-            timerRow
-            HStack(spacing: 12) {
-                ForEach(chosenShortcuts) { shortcut in
-                    Button {
-                        touch()
-                        model.run(shortcut)
-                    } label: {
-                        Image(systemName: shortcut.icon)
-                            .font(.system(size: 20, weight: .semibold))
-                            .frame(width: 52, height: 52)
-                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.tile))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(model.shortcuts) { shortcut in
+                        Button {
+                            touch()
+                            model.run(shortcut)
+                        } label: {
+                            VStack(spacing: 6) {
+                                Image(systemName: shortcut.icon)
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .frame(width: 54, height: 54)
+                                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.tile))
+                                Text(shortcut.title)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(night ? Self.nightDim : Theme.secondary)
+                                    .lineLimit(1)
+                                    .frame(width: 70)
+                            }
+                        }
+                        .buttonStyle(PressableStyle())
                     }
-                    .buttonStyle(PressableStyle())
-                    .accessibilityLabel(shortcut.title)
                 }
+            }
+            timerRow(night: night)
+            HStack(spacing: 10) {
+                pillButton(night ? "Day" : "Night", icon: night ? "sun.max.fill" : "moon.fill") { switchNight() }
+                pillButton("Choose shortcuts", icon: "square.grid.3x2") { pickingShortcuts = true }
                 Spacer(minLength: 0)
-                smallButton(nightIcon) { cycleNight() }
-                smallButton("slider.horizontal.3") { pickingShortcuts = true }
-                smallButton("xmark") { model.goHome() }
+                roundButton("xmark", size: 44) { model.goHome() }
             }
         }
-        .foregroundStyle(night ? Self.nightRed : Theme.text)
-        .padding(.horizontal, isPhone ? 20 : 48)
-        .padding(.vertical, 22)
-        .frame(maxWidth: 820)
-        .background(RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color.white.opacity(0.06)))
-        .padding(.horizontal, 16)
-        .padding(.bottom, isPhone ? 20 : 36)
-        .onTapGesture { touch() }  // taps inside keep it open, and don't close it
+        .padding(isPhone ? 18 : 28)
+        .frame(maxWidth: 900)
+        .background(RoundedRectangle(cornerRadius: 34, style: .continuous).fill(Color(white: 0.09).opacity(0.94)))
+        .padding(isPhone ? 12 : 32)
+        .frame(maxHeight: .infinity, alignment: size.width > size.height ? .center : .bottom)
+        .onTapGesture { touch() }  // taps inside keep it open
     }
 
-    /// Below the music: start a timer (5 to 60 minutes), or see, pause and stop one.
-    @ViewBuilder private var timerRow: some View {
+    /// Start a timer (quick lengths or any length up to 23 h 59 min), or see,
+    /// pause and stop the one running.
+    @ViewBuilder private func timerRow(night: Bool) -> some View {
         if timer.isRunning || timer.isPaused || timer.finished {
-            HStack(spacing: 16) {
+            HStack(spacing: 14) {
                 Image(systemName: timer.finished ? "bell.fill" : "timer")
-                    .foregroundStyle(timer.finished ? Theme.warm : Theme.secondary)
+                    .foregroundStyle(timer.finished ? Theme.warm : night ? Self.nightDim : Theme.secondary)
                 Text(timer.finished ? "Time's up" : timer.remainingText)
-                    .font(.system(size: 28, weight: .light))
+                    .font(.system(size: isPhone ? 24 : 30, weight: .light))
                     .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.easeInOut(duration: 0.3), value: timer.remainingText)
                 ProgressView(value: timer.progress)
-                    .tint(Theme.on)
-                    .frame(maxWidth: 220)
+                    .tint(night ? Self.nightRed : Theme.on)
+                    .frame(maxWidth: 260)
                 Spacer(minLength: 0)
                 if !timer.finished {
-                    smallButton(timer.isPaused ? "play.fill" : "pause.fill") { timer.togglePause() }
+                    roundButton(timer.isPaused ? "play.fill" : "pause.fill", size: 44) { timer.togglePause() }
                 }
-                smallButton("stop.fill") { timer.stop() }
+                roundButton("stop.fill", size: 44) { timer.stop() }
             }
         } else {
-            HStack(spacing: 10) {
-                Image(systemName: "timer").foregroundStyle(Theme.secondary)
-                ForEach([5, 15, 25, 45, 60], id: \.self) { minutes in
-                    Button {
-                        touch()
-                        timer.start(minutes: minutes)
-                    } label: {
-                        Text("\(minutes) min")
-                            .font(.system(size: 15, weight: .medium))
-                            .padding(.horizontal, 14)
-                            .frame(height: 40)
-                            .background(Capsule().fill(Theme.tile))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Image(systemName: "timer").foregroundStyle(night ? Self.nightDim : Theme.secondary)
+                    ForEach([5, 15, 25, 45, 60, 90, 120], id: \.self) { minutes in
+                        pillButton(minutes < 60 ? "\(minutes) min" : minutes % 60 == 0 ? "\(minutes / 60) h"
+                                   : "\(minutes / 60) h \(minutes % 60)", icon: nil) {
+                            timer.start(seconds: TimeInterval(minutes * 60))
+                        }
                     }
-                    .buttonStyle(PressableStyle())
+                    pillButton("Custom", icon: "slider.horizontal.3") { pickingTimer = true }
                 }
-                Spacer(minLength: 0)
             }
         }
     }
 
-    private func roundButton(_ icon: String, size: CGFloat, filled: Bool = false,
+    private func roundButton(_ icon: String, size: CGFloat, filled: Bool = false, night: Bool = false,
                              action: @escaping () -> Void) -> some View {
         Button {
             touch()
             action()
         } label: {
             Image(systemName: icon)
-                .font(.system(size: size * 0.38, weight: .semibold))
-                .foregroundStyle(filled ? Color.black : Theme.text)
+                .font(.system(size: size * 0.36, weight: .semibold))
+                .foregroundStyle(filled ? AnyShapeStyle(Color.black) : AnyShapeStyle(.primary))
                 .frame(width: size, height: size)
-                .background(Circle().fill(filled ? Theme.on : Theme.tile))
+                .background(Circle().fill(filled ? (night ? Self.nightRed : Theme.on) : Theme.tile))
         }
         .buttonStyle(PressableStyle())
     }
 
-    private func smallButton(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func pillButton(_ title: String, icon: String?, action: @escaping () -> Void) -> some View {
         Button {
             touch()
             action()
         } label: {
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .background(Circle().fill(Theme.tile))
+            HStack(spacing: 6) {
+                if let icon { Image(systemName: icon) }
+                Text(title)
+            }
+            .font(.system(size: 15, weight: .medium))
+            .padding(.horizontal, 16)
+            .frame(height: 42)
+            .background(Capsule().fill(Theme.tile))
         }
         .buttonStyle(PressableStyle())
     }
@@ -282,41 +341,81 @@ struct DockView: View {
         chosenList.compactMap { id in model.shortcuts.first { $0.id == id } }
     }
 
-    /// Night: dim red. Auto = 22:00 to 7:00.
+    /// Night from 22:00 to 7:00, unless switched by hand since the last change.
     private func isNight(_ date: Date) -> Bool {
-        switch NightMode(rawValue: nightSetting) ?? .auto {
-        case .on: return true
-        case .off: return false
-        case .auto:
-            let hour = Calendar.current.component(.hour, from: date)
-            return hour >= 22 || hour < 7
+        if nightOverride >= 0, date.timeIntervalSince1970 < nightOverrideUntil {
+            return nightOverride == 1
         }
+        let hour = Calendar.current.component(.hour, from: date)
+        return hour >= 22 || hour < 7
     }
 
-    private var nightIcon: String {
-        switch NightMode(rawValue: nightSetting) ?? .auto {
-        case .auto: return "moon.haze"
-        case .on: return "moon.fill"
-        case .off: return "sun.max"
-        }
+    /// Switch now; it holds until the next automatic change (22:00 or 7:00).
+    private func switchNight() {
+        let now = Date()
+        nightOverride = isNight(now) ? 0 : 1
+        let calendar = Calendar.current
+        let next = [22, 7].compactMap {
+            calendar.nextDate(after: now, matching: DateComponents(hour: $0, minute: 0), matchingPolicy: .nextTime)
+        }.min() ?? now.addingTimeInterval(12 * 3600)
+        nightOverrideUntil = next.timeIntervalSince1970
     }
 
-    private func cycleNight() {
-        switch NightMode(rawValue: nightSetting) ?? .auto {
-        case .auto: nightSetting = NightMode.on.rawValue
-        case .on: nightSetting = NightMode.off.rawValue
-        case .off: nightSetting = NightMode.auto.rawValue
-        }
-    }
-
-    /// A few points this way or that, changing every minute: no burn-in.
+    /// A few points this way or that, gliding each minute: no burn-in.
     private func drift(_ date: Date) -> CGSize {
         let minute = Double(Calendar.current.component(.minute, from: date))
-        return CGSize(width: sin(minute * 0.7) * 8, height: cos(minute * 1.3) * 8)
+        return CGSize(width: sin(minute * 0.7) * 10, height: cos(minute * 1.3) * 10)
+    }
+}
+
+/// Hours and minutes for a timer of any length (iOS's own countdown wheel).
+private struct TimerPicker: View {
+    let start: (TimeInterval) -> Void
+    @State private var duration: TimeInterval = 30 * 60
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            CountdownWheel(duration: $duration)
+                .padding()
+                .navigationTitle("Timer")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Start") {
+                            start(duration)
+                            dismiss()
+                        }
+                        .disabled(duration < 60)
+                    }
+                }
+        }
+        .presentationDetents([.medium])
+        .preferredColorScheme(.dark)
+    }
+}
+
+private struct CountdownWheel: UIViewRepresentable {
+    @Binding var duration: TimeInterval
+
+    func makeUIView(context: Context) -> UIDatePicker {
+        let picker = UIDatePicker()
+        picker.datePickerMode = .countDownTimer
+        picker.countDownDuration = duration
+        picker.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .valueChanged)
+        return picker
     }
 
-    static let nightRed = Color(red: 0.78, green: 0.2, blue: 0.18)
-    static let nightDim = Color(red: 0.43, green: 0.12, blue: 0.11)
+    func updateUIView(_ picker: UIDatePicker, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(duration: $duration) }
+
+    final class Coordinator: NSObject {
+        var duration: Binding<TimeInterval>
+        init(duration: Binding<TimeInterval>) { self.duration = duration }
+        @objc func changed(_ picker: UIDatePicker) { duration.wrappedValue = picker.countDownDuration }
+    }
 }
 
 /// A soft light that slowly grows and shrinks.
@@ -379,11 +478,12 @@ final class DockTimer: ObservableObject {
 
     var remainingText: String {
         let seconds = Int(remaining.rounded(.up))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        return seconds >= 3600 ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+            : String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
-    func start(minutes: Int) {
-        total = TimeInterval(minutes * 60)
+    func start(seconds: TimeInterval) {
+        total = max(seconds, 1)
         end = Date().addingTimeInterval(total)
         pausedRemaining = nil
         finished = false
