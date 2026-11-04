@@ -8,19 +8,16 @@ struct ShortcutsView: View {
     @State private var editing = false
     @State private var editor: Shortcut?  // the one being edited (a new one has an unused id)
 
-    private let columns = [GridItem(.adaptive(minimum: 200), spacing: 20)]
+    private let columns = [GridItem(.adaptive(minimum: isPhone ? 140 : 200), spacing: isPhone ? 12 : 20)]
 
     var body: some View {
-        VStack(spacing: 28) {
-            ZStack {
-                TopBar(title: "Shortcuts", model: model)
-                HStack {
-                    Spacer()
-                    Button(editing ? "Done" : "Edit") { editing.toggle() }
-                        .font(.title3.weight(.semibold))
-                        .padding(.trailing, 230)  // left of the connection badge
-                        .disabled(!model.connected)
-                }
+        VStack(spacing: isPhone ? 14 : 28) {
+            TopBar(title: "Shortcuts", model: model)
+            HStack {
+                Spacer()
+                Button(editing ? "Done" : "Edit") { editing.toggle() }
+                    .font(.title3.weight(.semibold))
+                    .disabled(!model.connected)
             }
             if let error = model.videoError {
                 Text(error)
@@ -58,7 +55,7 @@ struct ShortcutsView: View {
                 }
             }
         }
-        .padding(40)
+        .screenPadding()
         .foregroundStyle(.white)
         .sheet(item: $editor) { draft in
             ShortcutEditor(model: model, draft: draft,
@@ -105,7 +102,7 @@ struct ShortcutsView: View {
                     .font(.title3)
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 160)
+            .frame(maxWidth: .infinity, minHeight: isPhone ? 120 : 160)
             .background(RoundedRectangle(cornerRadius: 24).fill(Color.white.opacity(editing ? 0.14 : 0.08)))
         }
         .buttonStyle(PressableStyle())

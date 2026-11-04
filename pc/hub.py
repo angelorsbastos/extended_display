@@ -15,7 +15,8 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
     iPad -> laptop: start_video {mode, portrait}, stop_video, orientation {portrait},
                     shortcut {id}, media {action},
                     touch {touches: [{id, x, y, state}]} (x/y are 0..1 of the image),
-                    key {usage, down} (HID usage), mouse_move {dx, dy},
+                    key {usage, down} (HID usage), type_text {text} (characters),
+                    mouse_move {dx, dy},
                     mouse_button {button, down}, scroll {dx, dy}, clipboard,
                     log {text} (diagnostics, printed to the hub's log),
                     keyframe (re-send the current picture as a full keyframe),
@@ -88,6 +89,11 @@ class Session:
     def __init__(self, sock, transport="usb"):
         self.sock = sock
         self.transport = transport
+        self.key = None      # which connection this is, for the hub's list (find_devices)
+        self.address = None  # Tailscale address, for remote ones
+        self.name = "the iPad"  # set from the device's identity
+        self.device = "ipad"    # or "iphone"
+        self.ready = False
         self.cipher = None
         self.send_lock = threading.Lock()
         self.closed = threading.Event()
@@ -421,7 +427,8 @@ def handle(session):
     touch = touchscreen()
     receiver = files.Receiver(session)
     sender = files.Sender(session)
-    files.set_active_sender(sender)
+    # Explorer's "Send to > iPad": the iPad when there is one, else the iPhone
+    files.set_active_sender(sender, only_if=None if session.device == "ipad" else files.NOBODY)
 
     video = None
     sound = None         # audio.AudioStream while the iPad plays the laptop's sound
@@ -513,6 +520,8 @@ def handle(session):
                 receiver.cancel(msg)
             elif kind == "key":
                 inputs.key(msg.get("usage"), bool(msg.get("down")))
+            elif kind == "type_text":
+                inputs.type_text(msg.get("text", ""))
             elif kind == "mouse_move":
                 inputs.mouse_move(msg.get("dx", 0), msg.get("dy", 0))
             elif kind == "mouse_button" and msg.get("button") in inputs.MOUSE_BUTTONS:
@@ -622,69 +631,110 @@ class CodePopup:
             time.sleep(0.1)
 
 
-def wait_for_ipad(stop, on_status, browser, pairing_paused_until):
-    """Block until the iPad is reachable with the app open, over the cable (preferred)
-    or Wi-Fi; return a Session, or None if `stop` gets set first."""
-    waiting_for = None
-    while not stop.is_set():
-        usb_problem = None
+class AlreadyConnected(Exception):
+    """This device is already connected another way (e.g. Wi-Fi and Tailscale)."""
+
+
+class Devices:
+    """Which iPads / iPhones are connected, so several can be served at once but
+    each only once. A device is "claimed" by the session that serves it: a
+    Wi-Fi or Tailscale connection to a device that's already claimed is dropped
+    right after it says who it is (before login, so the device never switches to
+    it); the cable may take over from Wi-Fi, as the app itself prefers it."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.claims = {}         # device id -> Session
+        self.remote_ids = {}     # Tailscale address -> device id, learned on the first try
+        self.paused_until = {}   # device id or "remote <address>" -> time (pairing/retry back-off)
+
+    def claim(self, device_id, session):
+        with self.lock:
+            other = self.claims.get(device_id)
+            if other is not None and other is not session and not other.closed.is_set() \
+                    and session.transport != "usb":
+                return False
+            self.claims[device_id] = session
+            return True
+
+    def claimed(self, device_id):
+        with self.lock:
+            session = self.claims.get(device_id)
+            return session is not None and not session.closed.is_set()
+
+
+def find_devices(devices, busy, on_status, browser):
+    """New connections to iPads / iPhones that aren't connected yet: over the cable,
+    on the same Wi-Fi (Bonjour), or through Tailscale. `busy` = keys of the
+    connections already running. Returns (new sessions, why nothing was found)."""
+    found, problems = [], []
+    try:
+        cabled = usbmux.list_devices()
+    except OSError:
+        cabled = []
+        problems.append("Apple's USB service isn't running (install Apple Devices or iTunes).")
+    for device in cabled:
+        key = f"usb {device['DeviceID']}"
+        if key in busy:
+            continue
         try:
-            devices = usbmux.list_devices()
-        except OSError:
-            devices, usb_problem = [], "Apple's USB service isn't running (install Apple Devices or iTunes)."
-        if devices:
-            try:
-                return Session(usbmux.connect(devices[0]["DeviceID"], PORT), "usb")
-            except usbmux.UsbmuxError:
-                usb_problem = "iPad plugged in. Open the Extend Display app on it."
+            session = Session(usbmux.connect(device["DeviceID"], PORT), "usb")
+        except usbmux.UsbmuxError:
+            problems.append("A device is plugged in: open the Extend Display app on it.")
+            continue
+        session.key = key
+        found.append(session)
 
-        # explain the Wi-Fi side as precisely as possible: the user can't see it otherwise
-        wifi_problem = None
-        for ipad in browser.ipads() if browser else []:
-            unpaired = secure.key_for(ipad["id"]) is None
-            wait = pairing_paused_until.get(ipad["id"], 0) - time.time()
-            if unpaired and wait > 0:  # pairing was just cancelled; don't pop it up right away
-                wifi_problem = f"{ipad['name']}: pairing didn't finish. Offering it again in {int(wait) + 1} s."
-                continue
-            try:
-                sock = socket.create_connection((ipad["address"], ipad["port"]), timeout=3)
-            except OSError as e:
-                wifi_problem = (f"Found {ipad['name']} on Wi-Fi at {ipad['address']} but couldn't connect "
-                                f"({e}). On the iPad, check Settings > Privacy & Security > "
-                                "Local Network > Extend Display.")
-                continue
-            network_socket(sock)
-            on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
-            return Session(sock, "wifi")
+    # explain the Wi-Fi side as precisely as possible: the user can't see it otherwise
+    for ipad in browser.ipads() if browser else []:
+        key = f"wifi {ipad['id']}"
+        if key in busy or devices.claimed(ipad["id"]):
+            continue
+        unpaired = secure.key_for(ipad["id"]) is None
+        wait = devices.paused_until.get(ipad["id"], 0) - time.time()
+        if unpaired and wait > 0:  # pairing was just cancelled; don't pop it up right away
+            problems.append(f"{ipad['name']}: pairing didn't finish. Offering it again in {int(wait) + 1} s.")
+            continue
+        try:
+            sock = socket.create_connection((ipad["address"], ipad["port"]), timeout=3)
+        except OSError as e:
+            problems.append(f"Found {ipad['name']} on Wi-Fi at {ipad['address']} but couldn't connect "
+                            f"({e}). On it, check Settings > Privacy & Security > Local Network > "
+                            "Extend Display.")
+            continue
+        network_socket(sock)
+        on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
+        session = Session(sock, "wifi")
+        session.key = key
+        devices.claim(ipad["id"], session)  # so Tailscale doesn't race it to the same device
+        found.append(session)
 
-        # away from home: through Tailscale (only when nothing local works)
-        remote_problem = None
-        peers, remote_problem = tailnet.ipads()
-        for peer in peers:
-            key = f"remote {peer['address']}"
-            if pairing_paused_until.get(key, 0) > time.time():
-                continue  # it just failed (e.g. not paired yet); don't retry every second
-            pairing_paused_until[key] = time.time() + REMOTE_RETRY
-            try:
-                sock = socket.create_connection((peer["address"], IPAD_WIFI_PORT), timeout=5)
-            except OSError as e:
-                remote_problem = (f"{peer['name']} is online in Tailscale but didn't answer ({e}). "
-                                  "Is Extend Display open on it?")
-                continue
-            network_socket(sock)
-            on_status(f"Found {peer['name']} through Tailscale, connecting…")
-            return Session(sock, "remote")
+    # away from home: through Tailscale
+    peers, remote_problem = tailnet.ipads()
+    for peer in peers:
+        key = f"remote {peer['address']}"
+        known = devices.remote_ids.get(peer["address"])
+        if key in busy or (known and devices.claimed(known)) \
+                or devices.paused_until.get(key, 0) > time.time():
+            continue  # connected another way, or just failed: don't retry every second
+        devices.paused_until[key] = time.time() + REMOTE_RETRY
+        try:
+            sock = socket.create_connection((peer["address"], IPAD_WIFI_PORT), timeout=5)
+        except OSError as e:
+            remote_problem = f"{peer['name']} is online in Tailscale but didn't answer ({e}). " \
+                             "Is Extend Display open on it?"
+            continue
+        network_socket(sock)
+        session = Session(sock, "remote")
+        session.key, session.address = key, peer["address"]
+        found.append(session)
 
-        searching = ", ".join(browser.networks) if browser else "nothing (no network)"
-        reason = usb_problem or wifi_problem or (
-            "Looking for the iPad: plug in the cable, or open Extend Display on the same Wi-Fi "
-            f"(searching on {searching}; guest networks usually block this)."
-            + (f" Remote: {remote_problem}." if remote_problem else ""))
-        if reason != waiting_for:
-            on_status(reason)
-            waiting_for = reason
-        stop.wait(1)
-    return None
+    searching = ", ".join(browser.networks) if browser else "nothing (no network)"
+    reason = problems[0] if problems else (
+        "Looking for the iPad / iPhone: plug in the cable, or open Extend Display on the same Wi-Fi "
+        f"(searching on {searching}; guest networks usually block this)."
+        + (f" Remote: {remote_problem}." if remote_problem else ""))
+    return found, reason
 
 
 def network_socket(sock):
@@ -700,9 +750,11 @@ def network_socket(sock):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)  # Windows default is 10
 
 
-def set_up_link(session, on_status, pairing_paused_until):
-    """Before the normal conversation: learn who the iPad is, pair if needed, and on
-    Wi-Fi log in and switch to encryption. Raises if the link can't be trusted."""
+def set_up_link(session, on_status, devices):
+    """Before the normal conversation: learn who the device is, pair if needed, and on
+    Wi-Fi log in and switch to encryption. Raises if the link can't be trusted,
+    AlreadyConnected if that device is already served another way."""
+    pairing_paused_until = devices.paused_until
     session.sock.settimeout(3 if session.transport != "remote" else 10)  # internet is slower
     try:
         identity = session.recv_json()
@@ -715,6 +767,12 @@ def set_up_link(session, on_status, pairing_paused_until):
 
     if identity:
         ipad_id, name = identity["ipad_id"], identity.get("ipad_name", "the iPad")
+        session.name = name
+        session.device = identity.get("device", "ipad")  # apps before the iPhone version: iPads
+        if getattr(session, "address", None):
+            devices.remote_ids[session.address] = ipad_id
+        if not devices.claim(ipad_id, session):
+            raise AlreadyConnected(name)
         knows_us = secure.laptop_id() in identity.get("paired_laptops", [])
         key = secure.key_for(ipad_id) if knows_us else None
         if session.transport == "usb":
@@ -741,10 +799,13 @@ def set_up_link(session, on_status, pairing_paused_until):
     session.sock.settimeout(None)
 
 
-def serve(session, on_status, pairing_paused_until):
+def serve(session, on_status, devices):
     how = {"usb": "the cable", "wifi": "Wi-Fi", "remote": "Tailscale (remote)"}[session.transport]
     try:
-        set_up_link(session, on_status, pairing_paused_until)
+        set_up_link(session, on_status, devices)
+    except AlreadyConnected:
+        session.close()  # quietly: it's connected already, another way
+        return
     except secure.NeedsPairing:
         on_status("The iPad no longer knows this laptop (app reinstalled?). Pairing again…")
         session.close()
@@ -755,18 +816,20 @@ def serve(session, on_status, pairing_paused_until):
         session.close()
         return
     session.ready = True
-    on_status(f"iPad connected over {how}.")
+    on_status(f"{session.name} connected over {how}.")
     handle(session)
 
 
 def run(stop, on_status=print):
-    """Serve the iPad until `stop` is set. on_status gets short status texts."""
+    """Serve iPads and iPhones until `stop` is set: each connected device gets its
+    own Session and thread, and the search for more goes on meanwhile.
+    on_status gets short status texts."""
     try:
         browser = discovery.Watcher()
     except OSError as e:  # e.g. no network at all: the cable still works
         print(f"Wi-Fi discovery unavailable: {e}")
         browser = None
-    pairing_paused_until = {}  # iPad id -> time
+    devices = Devices()
     try:
         files.serve_outbox()  # "Send to > iPad" in Explorer
     except OSError as e:
@@ -775,27 +838,37 @@ def run(stop, on_status=print):
         ipad_control.Controller()  # Ctrl+Alt+I: keyboard and trackpad -> iPad, over Bluetooth
     except Exception as e:  # missing Bluetooth libraries, no Tk...: the rest still works
         print(f"Controlling the iPad from the laptop is unavailable: {e!r}")
+    running = {}  # connection key -> (Session, thread)
+    shown = None
     try:
         while not stop.is_set():
-            session = wait_for_ipad(stop, on_status, browser, pairing_paused_until)
-            if session is None:
-                return
-            # setup and the reader run in a thread so the wait below can notice
-            # `stop` and Ctrl+C, even while pairing waits for the user to type
-            worker = threading.Thread(target=serve, daemon=True,
-                                      args=(session, on_status, pairing_paused_until))
-            worker.start()
-            try:
-                while not session.closed.wait(0.2) and not stop.is_set():
-                    pass
-            finally:
-                # closing the socket ends handle(), which saves the layout and
-                # removes the virtual screen
-                session.close()
-                worker.join(timeout=5)
-            if getattr(session, "ready", False):
-                on_status("iPad disconnected.")
+            for key, (session, worker) in list(running.items()):
+                if session.closed.is_set():
+                    worker.join(timeout=5)
+                    del running[key]
+                    if getattr(session, "ready", False):
+                        on_status(f"{session.name} disconnected.")
+                        shown = None
+            new, reason = find_devices(devices, set(running), on_status, browser)
+            for session in new:
+                # setup and the reader run in their own thread, so this loop keeps
+                # looking (and notices `stop`), even while pairing waits for typing
+                worker = threading.Thread(target=serve, daemon=True, args=(session, on_status, devices))
+                worker.start()
+                running[session.key] = (session, worker)
+            ready = [s for s, _ in running.values() if getattr(s, "ready", False)]
+            status = ("Connected: " + ", ".join(sorted(s.name for s in ready))) if ready else reason
+            if status != shown and not new:
+                on_status(status)
+                shown = status
+            stop.wait(1)
     finally:
+        # closing the sockets ends handle(), which saves the layout and removes
+        # the virtual screen
+        for session, worker in running.values():
+            session.close()
+        for session, worker in running.values():
+            worker.join(timeout=5)
         if browser:
             browser.close()
 

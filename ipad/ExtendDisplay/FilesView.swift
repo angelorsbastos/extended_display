@@ -61,7 +61,7 @@ struct FilesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(40)
+        .screenPadding()
         .foregroundStyle(.white)
         .onAppear { files.refreshReceived() }
         .quickLookPreview($preview)

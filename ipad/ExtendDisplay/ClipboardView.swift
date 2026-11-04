@@ -9,7 +9,7 @@ struct ClipboardScreen: View {
             TopBar(title: "Clipboard", model: model)
             ClipboardList(model: model, history: model.clipboardHistory, onPaste: nil)
         }
-        .padding(40)
+        .screenPadding()
         .foregroundStyle(.white)
     }
 }

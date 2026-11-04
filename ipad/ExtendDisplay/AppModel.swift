@@ -13,7 +13,12 @@ enum Screen: Equatable {
     case clipboard
     case files
     case dashboard
+    case trackpad  // iPhone
+    case dock      // iPhone
 }
+
+/// iPhone or iPad: the iPhone has its own home screen and modes.
+let isPhone = UIDevice.current.userInterfaceIdiom == .phone
 
 /// App state, shared by all screens. Published properties change on the main thread only.
 final class AppModel: ObservableObject {
@@ -169,9 +174,9 @@ final class AppModel: ObservableObject {
 
     func open(_ screen: Screen) {
         self.screen = screen
-        if screen == .controls {
+        if screen == .controls || screen == .dock {
             videoError = nil
-            // the laptop sends its settings every 2 s while this screen is open
+            // the laptop sends its settings (and battery) every 2 s while this screen is open
             server.send(json: ["type": "watch_controls", "on": true])
         }
         if screen == .dashboard {
@@ -188,7 +193,7 @@ final class AppModel: ObservableObject {
     }
 
     func goHome() {
-        if screen == .controls {
+        if screen == .controls || screen == .dock {
             server.send(json: ["type": "watch_controls", "on": false])
         }
         if screen == .dashboard {
@@ -212,6 +217,11 @@ final class AppModel: ObservableObject {
     func saveShortcuts(_ list: [Shortcut]) {
         shortcuts = list  // show it right away
         server.send(json: ["type": "save_shortcuts", "shortcuts": list.map(\.json)])
+    }
+
+    /// Laptop pointer, clicks, scrolling and typing from the iPhone's Trackpad mode.
+    func pointer(_ message: [String: Any]) {
+        server.send(json: message)
     }
 
     /// Run a shortcut that isn't saved yet, to see what it does.

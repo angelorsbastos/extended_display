@@ -30,7 +30,7 @@ struct ControlsView: View {
                 .opacity(model.connected ? 1 : 0.4)
             }
         }
-        .padding(40)
+        .screenPadding()
         .foregroundStyle(.white)
         .confirmationDialog(confirming?.question ?? "", isPresented: Binding(
             get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
