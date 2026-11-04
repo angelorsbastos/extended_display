@@ -135,6 +135,7 @@ class Controller:
         self.touchpad = touchpad.Touchpad(lambda *_: None, self._on_fingers)
         self.trackpad_mode = False  # the touchpad goes to the iPad as a trackpad (else as a mouse)
         self.touch_seen = 0.0  # when the touchpad last had fingers on it
+        self.hook_calls = self.hook_slowest = 0  # diagnostics (_report_escape)
         self.mouse_fingers = MouseFingers(self.bluetooth.send_touch,
                                           lambda: bool(self.touchpad.touching) or self.touchpad.clicked)
         threading.Thread(target=self._run, name="ipad-control", daemon=True).start()
@@ -256,14 +257,32 @@ class Controller:
         scrolling isn't mouse input the hook can stop, Windows sends it to the
         window under the pointer, and the hint ignores it."""
         started = self.started
+        parked = None
         while self.active and self.started == started:
             if self.hint.hwnd and user32.GetForegroundWindow() != self.hint.hwnd:
                 bring_to_front(self.hint.hwnd)
             if self.trackpad_mode and self.hint.hwnd:
                 rect = wintypes.RECT()
                 if user32.GetWindowRect(ctypes.c_void_p(self.hint.hwnd), ctypes.byref(rect)) and rect.right > rect.left:
-                    user32.SetCursorPos((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+                    self._report_escape(parked)
+                    parked = ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+                    user32.SetCursorPos(*parked)
             time.sleep(0.25)
+
+    def _report_escape(self, parked):
+        """Diagnostics: the laptop pointer should stay where it was parked. If it
+        moved, mouse input got past the hook: log it with how the hook was doing
+        (how many events it saw, and the longest an event waited for it)."""
+        calls, slowest = self.hook_calls, self.hook_slowest
+        self.hook_calls = self.hook_slowest = 0
+        if parked is None:
+            return
+        here = wintypes.POINT()
+        user32.GetCursorPos(ctypes.byref(here))
+        if (here.x, here.y) != parked:
+            touched = time.time() - self.touch_seen < 0.5
+            print(f"pointer escaped by ({here.x - parked[0]}, {here.y - parked[1]}): hook saw {calls} "
+                  f"events, slowest waited {slowest} ms, touchpad {'in use' if touched else 'idle'}")
 
     def _on_fingers(self, touching, clicked):
         """Every touchpad report (touchpad thread): the fingers go to the iPad."""
@@ -316,6 +335,10 @@ class Controller:
         if code < 0 or not self.active:
             return user32.CallNextHookEx(None, code, message, data)
         m = MSLLHOOKSTRUCT.from_address(data)
+        self.hook_calls += 1  # diagnostics, see _report_escape
+        waited = (kernel32.GetTickCount() - m.time) & 0xFFFFFFFF
+        if waited < 60_000:
+            self.hook_slowest = max(self.hook_slowest, waited)
         if m.flags & LLMHF_INJECTED:
             return user32.CallNextHookEx(None, code, message, data)
         if self.trackpad_mode:
