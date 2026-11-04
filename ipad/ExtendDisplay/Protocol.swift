@@ -71,6 +71,7 @@ struct ControlsState: Decodable, Equatable {
     var keepAwake: Bool?
     var powerPlans: [PowerPlan]?
     var powerPlan: String?
+    var cpuTemp: Int?
 }
 
 /// The Dashboard's numbers (pc/stats.py read()). nil = the laptop couldn't read it.
@@ -112,6 +113,9 @@ struct LaptopStats: Decodable, Equatable {
 struct LaptopMessage: Decodable {
     let type: String
     let shortcuts: [Shortcut]?
+    let laptopName: String?
+    let laptopInput: Bool?
+    let on: Bool?  // laptop_input
     let apps: [LaptopApp]?
     let stats: LaptopStats?
     let nowPlaying: NowPlaying?

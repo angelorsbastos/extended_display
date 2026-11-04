@@ -85,6 +85,32 @@ SCROLL_UNIT = 40     # Windows wheel units per iPad scroll step (a mouse notch i
 CONNECT_TIMEOUT = 12  # seconds to wait for the iPad before giving up
 
 
+WM_REQUEST = WM_APP + 2  # switch on (wParam 1) / off (0) on request from a device
+
+_controller = None
+listeners = set()  # called with True / False whenever it switches (hub tells the devices)
+
+
+def start():
+    global _controller
+    _controller = Controller()
+
+
+def is_active():
+    return bool(_controller and _controller.active)
+
+
+def request(on):
+    """Switch from a device (the iPad's keyboard tile), as if Ctrl+Alt+I was pressed."""
+    if _controller and _controller.thread_id:
+        user32.PostThreadMessageW(_controller.thread_id, WM_REQUEST, int(bool(on)), 0)
+
+
+def _tell(active):
+    for listener in list(listeners):
+        listener(active)
+
+
 class Controller:
     """Owns the hotkey thread (with its message loop, where the hooks live too),
     the Bluetooth keyboard/mouse and the on-screen hint."""
@@ -118,6 +144,8 @@ class Controller:
                 self._enter()
             elif msg.message == WM_UNHOOK:
                 self._unhook()
+            elif msg.message == WM_REQUEST:
+                self._enter() if msg.wParam else self._leave()
             else:  # the gesture controller's window lives on this thread
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
@@ -158,6 +186,7 @@ class Controller:
         threading.Thread(target=self._give_up_if_not_connected, daemon=True).start()
         threading.Thread(target=self._stay_in_front, daemon=True).start()
         print("controlling the iPad")
+        _tell(True)
 
     def _leave(self, reason=None):
         """Back to the laptop. Called from a hook or another thread."""
@@ -185,6 +214,7 @@ class Controller:
         if self.previous_window:
             user32.SetForegroundWindow(self.previous_window)  # allowed: we're in front now
         print(f"back to the laptop{f': {reason}' if reason else ''}")
+        _tell(False)
 
     def _unhook(self):
         if self.active:

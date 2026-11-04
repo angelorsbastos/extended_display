@@ -1,54 +1,6 @@
 ﻿import SwiftUI
 import UIKit
 
-struct HomeView: View {
-    @ObservedObject var model: AppModel
-
-    // 4 across in landscape, 3 in portrait: seven cards still fit above the connection panel
-    private let columns = [GridItem(.adaptive(minimum: 230), spacing: 24)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 32) {
-            HStack {
-                Text("Wingman")
-                    .font(.largeTitle.bold())
-                Spacer()
-                if model.connected {
-                    SoundButton(model: model)
-                }
-                ConnectionBadge(transport: model.transport)
-            }
-
-            LazyVGrid(columns: columns, spacing: 24) {
-                Group {
-                    ModeCard(title: "Extend", subtitle: "Use the iPad as a second screen",
-                             icon: "display.2", tint: .blue) { model.open(.video(.extend)) }
-                    ModeCard(title: "Mirror", subtitle: "Show the laptop's screen",
-                             icon: "rectangle.on.rectangle", tint: .purple) { model.open(.video(.mirror)) }
-                    ModeCard(title: "Shortcuts", subtitle: "Buttons that run things on the laptop",
-                             icon: "square.grid.3x3.fill", tint: .orange) { model.open(.shortcuts) }
-                    ModeCard(title: "Controls", subtitle: "Music, sound, screen, Wi-Fi, power",
-                             icon: "slider.horizontal.3", tint: .green) { model.open(.controls) }
-                    ModeCard(title: "Dashboard", subtitle: "Temperatures, fans, usage, battery health",
-                             icon: "gauge.with.dots.needle.67percent", tint: .red) { model.open(.dashboard) }
-                }
-                .disabled(!model.connected)
-                .opacity(model.connected ? 1 : 0.4)
-                // the history is kept on the iPad, so it opens even without the laptop
-                ModeCard(title: "Clipboard", subtitle: "The last \(ClipboardHistory.limit) things copied, on either side",
-                         icon: "list.clipboard", tint: .pink) { model.open(.clipboard) }
-                ModeCard(title: "Files", subtitle: "Send photos and files both ways",
-                         icon: "arrow.up.arrow.down.circle", tint: .cyan) { model.open(.files) }
-            }
-
-            ConnectionPanel(model: model)
-            Spacer()
-        }
-        .padding(40)
-        .foregroundStyle(.white)
-    }
-}
-
 /// Says exactly what each way of connecting is doing, and what to do about a problem.
 struct ConnectionPanel: View {
     @ObservedObject var model: AppModel
@@ -147,35 +99,6 @@ struct StatusRow: View {
     }
 }
 
-struct ModeCard: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(tint)
-                Spacer()
-                Text(title)
-                    .font(.title.bold())
-                    .foregroundStyle(.white)
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, minHeight: 190, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 28).fill(Color.white.opacity(0.08)))
-        }
-        .buttonStyle(PressableStyle())
-    }
-}
-
 struct ConnectionBadge: View {
     let transport: Transport?
 
@@ -211,30 +134,6 @@ struct ConnectionBadge: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Capsule().fill(Color.white.opacity(0.08)))
-    }
-}
-
-/// Where the laptop's sound plays: tap to switch between the iPad and the laptop.
-struct SoundButton: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Button {
-            model.setSoundOnIPad(!model.soundOnIPad)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: model.soundOnIPad ? "speaker.wave.2.fill" : "laptopcomputer")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(model.soundOnIPad ? Color.green : Color.gray)
-                Text(model.soundOnIPad ? "Sound on iPad" : "Sound on laptop")
-                    .font(.callout)
-                    .foregroundStyle(.white)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color.white.opacity(0.08)))
-        }
-        .buttonStyle(PressableStyle())
     }
 }
 

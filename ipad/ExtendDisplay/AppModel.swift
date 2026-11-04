@@ -35,6 +35,10 @@ final class AppModel: ObservableObject {
     @Published var pairedLaptops = 0
     @Published var screen: Screen = .home
     @Published var shortcuts: [Shortcut] = []
+    /// The laptop's name (hello), for the home screen's title.
+    @Published var laptopName: String?
+    /// Ctrl+Alt+I is on: the laptop's keyboard and trackpad drive the iPad.
+    @Published var laptopInput = false
     /// The laptop's Start menu apps, for the shortcut editor (asked for with requestApps).
     @Published var laptopApps: [LaptopApp]?
     /// The Dashboard's latest numbers, and the last few minutes of them for the graphs.
@@ -111,6 +115,7 @@ final class AppModel: ObservableObject {
                 if self.screen == .dashboard {  // reconnected while it's open
                     self.server.send(json: ["type": "watch_stats", "on": true])
                 }
+                self.updateControlsWatch()
                 if !self.sharedWhileAway.isEmpty {
                     self.files.send(self.sharedWhileAway)
                     self.sharedWhileAway.removeAll()
@@ -174,10 +179,10 @@ final class AppModel: ObservableObject {
 
     func open(_ screen: Screen) {
         self.screen = screen
+        tap()
+        updateControlsWatch()
         if screen == .controls || screen == .dock {
             videoError = nil
-            // the laptop sends its settings (and battery) every 2 s while this screen is open
-            server.send(json: ["type": "watch_controls", "on": true])
         }
         if screen == .dashboard {
             // the laptop reads its sensors only while this screen is open
@@ -193,9 +198,6 @@ final class AppModel: ObservableObject {
     }
 
     func goHome() {
-        if screen == .controls || screen == .dock {
-            server.send(json: ["type": "watch_controls", "on": false])
-        }
         if screen == .dashboard {
             server.send(json: ["type": "watch_stats", "on": false])
         }
@@ -207,6 +209,26 @@ final class AppModel: ObservableObject {
         receivingVideo = false
         showingClipboard = false
         screen = .home
+        updateControlsWatch()
+    }
+
+    /// The laptop sends its settings (volume, brightness, battery, temperature)
+    /// every 2 s while a screen that shows them is open: home, Controls, Dock.
+    private func updateControlsWatch() {
+        let watching = screen == .home || screen == .controls || screen == .dock
+        server.send(json: ["type": "watch_controls", "on": watching])
+    }
+
+    /// A light tap felt in the hand, for buttons and tiles.
+    func tap() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Ctrl+Alt+I from here: the laptop's keyboard and trackpad go to the iPad.
+    func setLaptopInput(_ on: Bool) {
+        laptopInput = on  // right away; the laptop confirms (laptop_input)
+        tap()
+        server.send(json: ["type": "laptop_input", "on": on])
     }
 
     func run(_ shortcut: Shortcut) {
@@ -390,6 +412,10 @@ final class AppModel: ObservableObject {
             switch message.type {
             case "hello":
                 self.shortcuts = message.shortcuts ?? []
+                self.laptopName = message.laptopName ?? self.laptopName
+                self.laptopInput = message.laptopInput ?? false
+            case "laptop_input":
+                self.laptopInput = message.on ?? false
             case "apps":
                 self.laptopApps = message.apps ?? []
             case "stats":
