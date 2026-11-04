@@ -109,7 +109,7 @@ struct SliderTile: View {
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { drag in
                     dragging = true
-                    level = min(max(1 - drag.location.y / height, 0), 1)
+                    level = min(max(Double(1 - drag.location.y / height), 0), 1)
                     if Date().timeIntervalSince(lastSent) > 0.1 {
                         lastSent = Date()
                         onChange(Int(level * 100))
