@@ -14,3 +14,5 @@ soundcard
 winrt-Windows.Devices.Bluetooth
 winrt-Windows.Devices.Bluetooth.GenericAttributeProfile
 winrt-Windows.Storage.Streams
+winrt-Windows.UI.Input
+winrt-Windows.UI.Core

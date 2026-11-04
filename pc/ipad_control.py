@@ -12,8 +12,13 @@ keyboard.
 Keys map like Extend Display does the other way round: Ctrl -> Cmd (so Ctrl+C
 copies on the iPad), Alt -> Option, Win -> Ctrl, AltGr -> right Option.
 
-Touchpad gestures that Windows itself handles (three/four-finger swipes) don't
-pass through the hooks and still act on the laptop.
+Three/four-finger gestures never pass through the hooks: Windows' shell takes
+them. While switched, a TouchpadGesturesController (Windows 11's official way
+for remote-desktop-style apps) claims them instead, which only works while one
+of our windows is in front, so the hint window is brought to the front and the
+previous window gets the focus back afterwards. touchpad.py reads the fingers
+and turns swipes into iPad shortcuts: up = Home (Cmd+H), left/right = previous
+app (Cmd+Tab).
 """
 import ctypes
 import queue
@@ -23,6 +28,7 @@ import tkinter
 from ctypes import wintypes
 
 import inputs
+import touchpad
 from bluetooth_hid import BluetoothHID
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -35,6 +41,10 @@ user32.SetWindowsHookExW.restype = ctypes.c_void_p
 user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
 user32.CallNextHookEx.restype = LRESULT
 user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+user32.GetForegroundWindow.restype = ctypes.c_void_p
+user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+user32.BringWindowToTop.argtypes = [ctypes.c_void_p]
+user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 
 
@@ -65,6 +75,11 @@ MOUSE_BUTTON_MESSAGES = {0x0201: (1, True), 0x0202: (1, False), 0x0204: (2, True
 SCAN_TO_HID = {scan: usage for usage, scan in inputs.HID_TO_SCAN.items() if usage != 49}
 ALTGR_FAKE_CTRL = 0x21D  # Windows' extra left-Ctrl that comes with every AltGr press
 
+CMD = 1 << (227 - 224)  # modifier bit of the left Cmd key in a keyboard report
+KEY_H, KEY_TAB = 0x0B, 0x2B
+SWIPES = {"up": (CMD, KEY_H), "left": (CMD, KEY_TAB), "right": (CMD, KEY_TAB)}  # iPad shortcuts
+ALL_GLOBAL_GESTURES = 0x3F  # TouchpadGlobalGestureKinds: 3/4/5-finger swipes and taps
+
 POINTER_SCALE = 1.0  # laptop pointer movement -> iPad pointer movement
 SCROLL_UNIT = 40     # Windows wheel units per iPad scroll step (a mouse notch is 120)
 CONNECT_TIMEOUT = 12  # seconds to wait for the iPad before giving up
@@ -81,6 +96,9 @@ class Controller:
         self.thread_id = None
         self.hooks = []
         self.stopping = None  # timer that turns Bluetooth off after switching back
+        self.gestures = None  # TouchpadGesturesController, made on the hotkey thread
+        self.previous_window = None
+        self.touchpad = touchpad.Touchpad(self._on_swipe)
         threading.Thread(target=self._run, name="ipad-control", daemon=True).start()
 
     # ---- hotkey thread -----------------------------------------------------------
@@ -92,12 +110,16 @@ class Controller:
                   "controlling the iPad from the laptop is off")
             return
         print("Ctrl+Alt+I: the laptop's keyboard and trackpad control the iPad")
+        self.gestures = _gesture_controller()
         msg = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             if msg.message == WM_HOTKEY:
                 self._enter()
             elif msg.message == WM_UNHOOK:
                 self._unhook()
+            else:  # the gesture controller's window lives on this thread
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
 
     def _enter(self):
         if self.active:
@@ -125,8 +147,14 @@ class Controller:
         self.hooks = [user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._keyboard_proc, module, 0),
                       user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_proc, module, 0)]
         self.bluetooth.start()
-        self.hint.show("Connecting to the iPad…", "Ctrl+Alt+I to cancel")
+        # 3/4-finger gestures: ours instead of Windows', while our hint is in front
+        self.previous_window = user32.GetForegroundWindow()
+        if self.gestures:
+            self.gestures.enabled = True
+        self.touchpad.listening.set()
+        self.hint.show("Connecting to the iPad…", "Ctrl+Alt+I to cancel", in_front=True)
         threading.Thread(target=self._give_up_if_not_connected, daemon=True).start()
+        threading.Thread(target=self._stay_in_front, daemon=True).start()
         print("controlling the iPad")
 
     def _leave(self, reason=None):
@@ -144,10 +172,15 @@ class Controller:
         # let the last key-up reach the iPad before Bluetooth goes
         self.stopping = threading.Timer(0.3, self.bluetooth.stop)
         self.stopping.start()
+        self.touchpad.listening.clear()
+        if self.gestures:
+            self.gestures.enabled = False
         if reason:
             self.hint.show(reason, None, seconds=6)
         else:
             self.hint.hide()
+        if self.previous_window:
+            user32.SetForegroundWindow(self.previous_window)  # allowed: we're in front now
         print(f"back to the laptop{f': {reason}' if reason else ''}")
 
     def _unhook(self):
@@ -166,6 +199,26 @@ class Controller:
                 return
         self._leave("The iPad didn't connect. Is Bluetooth on, and “LAPRÉ” paired in its "
                     "Settings > Bluetooth?")
+
+    def _stay_in_front(self):
+        """Windows only hands gestures to the app in front; if something else
+        took the front (a notification, a new window), take it back."""
+        started = self.started
+        while self.active and self.started == started:
+            if self.hint.hwnd and user32.GetForegroundWindow() != self.hint.hwnd:
+                bring_to_front(self.hint.hwnd)
+            time.sleep(0.5)
+
+    def _on_swipe(self, fingers, kind):
+        """A 3/4-finger swipe on the laptop's touchpad (touchpad thread)."""
+        if not self.active or kind not in SWIPES:
+            return
+        modifiers, usage = SWIPES[kind]
+        self.bluetooth.send_keys(modifiers, [usage])
+        # then back to whatever is really held
+        held = self.ipad_held.values()
+        self.bluetooth.send_keys(sum(1 << (u - 224) for u in held if u >= 224), [u for u in held if u < 224])
+        print(f"{fingers}-finger swipe {kind} -> iPad")
 
     # ---- hooks (run on the hotkey thread; must be quick) --------------------------
 
@@ -248,16 +301,50 @@ class Controller:
             self.hint.show("The iPad disconnected. Reconnecting…", "Ctrl+Alt+I to come back")
 
 
+def _gesture_controller():
+    """Windows' TouchpadGesturesController, claiming 3/4/5-finger swipes and taps
+    (disabled until switched over), or None on Windows versions without it.
+    Must be made on a thread that dispatches window messages."""
+    try:
+        from winrt.windows.ui.input import TouchpadGesturesController, TouchpadGlobalGestureKinds
+        if not TouchpadGesturesController.is_supported():
+            raise OSError("not supported on this Windows")
+        controller = TouchpadGesturesController.create_for_process()
+        controller.supported_gestures = TouchpadGlobalGestureKinds(ALL_GLOBAL_GESTURES)
+        controller.enabled = False
+        return controller
+    except Exception as e:  # older Windows 11 / Windows 10, missing library
+        print(f"three/four-finger swipes will still go to Windows: {e!r}")
+        return None
+
+
+def bring_to_front(hwnd):
+    """SetForegroundWindow, with the usual workaround for Windows refusing it to
+    a process that isn't in front: briefly share input state with the one that is."""
+    front = user32.GetForegroundWindow()
+    if front == hwnd:
+        return
+    front_thread = user32.GetWindowThreadProcessId(front, None) if front else 0
+    me = kernel32.GetCurrentThreadId()
+    attached = front_thread and front_thread != me and user32.AttachThreadInput(me, front_thread, True)
+    user32.BringWindowToTop(hwnd)
+    user32.SetForegroundWindow(hwnd)
+    if attached:
+        user32.AttachThreadInput(me, front_thread, False)
+
+
 class Hint:
     """A small always-on-top note at the top of the screen, saying where the
-    keyboard and trackpad go. Tk runs on its own thread; show/hide from any."""
+    keyboard and trackpad go. Tk runs on its own thread; show/hide from any.
+    With in_front it also takes the focus (see Controller._stay_in_front)."""
 
     def __init__(self):
         self.requests = queue.Queue()
+        self.hwnd = None
         threading.Thread(target=self._run, name="hint", daemon=True).start()
 
-    def show(self, title, subtitle, seconds=None):
-        self.requests.put((title, subtitle, seconds))
+    def show(self, title, subtitle, seconds=None, in_front=False):
+        self.requests.put((title, subtitle, seconds, in_front))
 
     def hide(self):
         self.requests.put(None)
@@ -273,6 +360,8 @@ class Hint:
         subtitle = tkinter.Label(root, font=("Segoe UI", 10), fg="#a0a0a5", bg="#1c1c1e")
         title.pack(padx=22, pady=(10, 0))
         subtitle.pack(padx=22, pady=(0, 10))
+        root.update_idletasks()
+        self.hwnd = int(root.wm_frame(), 16)  # the real top-level window
         hide_at = [None]
 
         def poll():
@@ -283,7 +372,7 @@ class Hint:
                         root.withdraw()
                         hide_at[0] = None
                         continue
-                    text, small, seconds = request
+                    text, small, seconds, in_front = request
                     title.config(text=text)
                     subtitle.config(text=small or "")
                     if small:
@@ -295,6 +384,9 @@ class Hint:
                     root.geometry(f"+{x}+24")
                     root.deiconify()
                     root.lift()
+                    if in_front:
+                        root.update_idletasks()
+                        bring_to_front(self.hwnd)
                     hide_at[0] = time.time() + seconds if seconds else None
             except queue.Empty:
                 pass
