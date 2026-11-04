@@ -361,9 +361,11 @@ struct DockView: View {
         let now = Date()
         nightOverride = isNight(now) ? 0 : 1
         let calendar = Calendar.current
-        let next = [Prefs.nightStartHour, Prefs.nightEndHour].compactMap {
-            calendar.nextDate(after: now, matching: DateComponents(hour: $0, minute: 0), matchingPolicy: .nextTime)
-        }.min() ?? now.addingTimeInterval(12 * 3600)
+        let hours: [Int] = [Prefs.nightStartHour, Prefs.nightEndHour]
+        let changes: [Date] = hours.compactMap { hour in
+            calendar.nextDate(after: now, matching: DateComponents(hour: hour, minute: 0), matchingPolicy: .nextTime)
+        }
+        let next: Date = changes.min() ?? now.addingTimeInterval(12 * 3600)
         nightOverrideUntil = next.timeIntervalSince1970
     }
 
