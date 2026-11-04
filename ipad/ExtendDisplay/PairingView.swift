@@ -13,7 +13,7 @@ struct PairingView: View {
             VStack(spacing: 22) {
                 Image(systemName: "lock.laptopcomputer")
                     .font(.system(size: 48))
-                    .foregroundStyle(Color.blue)
+                    .foregroundStyle(Theme.accent)
                 Text("Pair with \(laptopName)")
                     .font(.title2.bold())
                 Text("Type the 6-digit code shown on the laptop.")
@@ -25,7 +25,7 @@ struct PairingView: View {
                     .multilineTextAlignment(.center)
                     .frame(width: 260)
                     .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.tileRaised))
                     .focused($focused)
                     .onChange(of: code) { newValue in
                         // digits only, at most 6

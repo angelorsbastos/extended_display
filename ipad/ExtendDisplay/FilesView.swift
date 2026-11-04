@@ -94,7 +94,7 @@ struct FilesView: View {
             .font(.title3.weight(.semibold))
             .frame(maxWidth: .infinity, minHeight: 64)
             .foregroundStyle(.white)
-            .background(RoundedRectangle(cornerRadius: 18).fill(Color.cyan.opacity(0.35)))
+            .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -122,7 +122,7 @@ struct TransferRow: View {
                     Text("Waiting…").font(.footnote).foregroundStyle(.secondary)
                 case .moving:
                     ProgressView(value: transfer.progress)
-                        .tint(.cyan)
+                        .tint(Theme.on)
                     Text("\(bytes(transfer.moved)) of \(bytes(transfer.size))")
                         .font(.footnote).foregroundStyle(.secondary)
                 case .done:
@@ -134,14 +134,14 @@ struct TransferRow: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 
     private var color: Color {
         switch transfer.state {
         case .done: return .green
         case .failed: return .red
-        default: return .cyan
+        default: return Theme.text
         }
     }
 }
@@ -157,7 +157,7 @@ struct ReceivedRow: View {
                 HStack(spacing: 14) {
                     Image(systemName: "doc.fill")
                         .font(.title2)
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(Theme.secondary)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(file.name)
                             .lineLimit(1)
@@ -183,7 +183,7 @@ struct ReceivedRow: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 }
 

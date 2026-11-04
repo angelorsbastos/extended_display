@@ -140,6 +140,6 @@ struct ClipboardList: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 }

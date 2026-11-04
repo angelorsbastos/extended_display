@@ -42,7 +42,7 @@ struct ControlsView: View {
     // MARK: cards
 
     private var musicCard: some View {
-        Card(title: "Music", icon: "music.note", tint: .green) {
+        Card(title: "Music", icon: "music.note", tint: Theme.secondary) {
             let np = model.nowPlaying
             VStack(alignment: .leading, spacing: 4) {
                 Text(np?.title.isEmpty == false ? np!.title : "Nothing playing")
@@ -65,7 +65,7 @@ struct ControlsView: View {
     }
 
     private var soundCard: some View {
-        Card(title: "Sound", icon: "speaker.wave.2.fill", tint: .blue) {
+        Card(title: "Sound", icon: "speaker.wave.2.fill", tint: Theme.secondary) {
             LevelSlider(icon: "speaker.wave.2.fill", value: model.controls?.volume) {
                 model.controls?.volume = $0
                 model.control("volume", $0)
@@ -87,7 +87,7 @@ struct ControlsView: View {
     }
 
     private var screenCard: some View {
-        Card(title: "Laptop screen", icon: "sun.max.fill", tint: .yellow) {
+        Card(title: "Laptop screen", icon: "sun.max.fill", tint: Theme.secondary) {
             LevelSlider(icon: "sun.max.fill", value: model.controls?.brightness) {
                 model.controls?.brightness = $0
                 model.control("brightness", $0)
@@ -100,7 +100,7 @@ struct ControlsView: View {
     }
 
     private var wirelessCard: some View {
-        Card(title: "Wireless & power", icon: "bolt.fill", tint: .orange) {
+        Card(title: "Wireless and power", icon: "bolt.fill", tint: Theme.secondary) {
             Toggle(isOn: toggle(\.wifi, "wifi")) { Label("Wi-Fi", systemImage: "wifi") }
                 .disabled(model.controls?.wifi == nil)
             Toggle(isOn: toggle(\.bluetooth, "bluetooth")) {
@@ -127,7 +127,7 @@ struct ControlsView: View {
     }
 
     private var powerCard: some View {
-        Card(title: "Power", icon: "power", tint: .red) {
+        Card(title: "Power", icon: "power", tint: Theme.secondary) {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(PowerAction.allCases) { action in
                     Button {
@@ -139,7 +139,7 @@ struct ControlsView: View {
                     } label: {
                         Label(action.title, systemImage: action.icon)
                             .frame(maxWidth: .infinity, minHeight: 50)
-                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)))
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.tileRaised))
                     }
                     .buttonStyle(PressableStyle())
                 }
@@ -200,7 +200,7 @@ struct Card<Content: View>: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 24).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 }
 
@@ -256,9 +256,9 @@ struct ToggleButton: View {
         } label: {
             Label(title, systemImage: icon)
                 .frame(maxWidth: .infinity, minHeight: 46)
-                .foregroundStyle(isOn ? Color.black : Color.white)
-                .background(RoundedRectangle(cornerRadius: 14)
-                    .fill(isOn ? Color.blue : Color.white.opacity(0.1)))
+                .foregroundStyle(isOn ? Theme.onText : Theme.text)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isOn ? Theme.on : Theme.tileRaised))
         }
         .buttonStyle(PressableStyle())
     }
@@ -275,9 +275,9 @@ struct MediaButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(prominent ? Color.black : Color.white)
+                .foregroundStyle(prominent ? Theme.onText : Theme.text)
                 .frame(width: size * 2.2, height: size * 2.2)
-                .background(Circle().fill(prominent ? Color.green : Color.white.opacity(0.1)))
+                .background(Circle().fill(prominent ? Theme.on : Theme.tileRaised))
         }
         .buttonStyle(PressableStyle())
     }

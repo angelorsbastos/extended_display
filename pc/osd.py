@@ -39,12 +39,63 @@ _thread = None
 
 def show(icon, text, level=None):
     """icon: a key of ICONS; level: 0-100 for a bar, or None."""
+    _ensure_thread()
+    _requests.put(("note", ICONS.get(icon, ICONS["shortcut"]), str(text)[:60], level))
+
+
+def _ensure_thread():
     global _thread
     with _started:
         if _thread is None:
             _thread = threading.Thread(target=_run, name="osd", daemon=True)
             _thread.start()
-    _requests.put((ICONS.get(icon, ICONS["shortcut"]), str(text)[:60], level))
+
+
+def show_code(code, device_name):
+    """The 6-digit pairing code, big, in the middle of the screen, until hide_code().
+    It lives in the same Tk thread as the notes and is only shown and hidden:
+    Tk windows must never be destroyed from another thread."""
+    _ensure_thread()
+    _requests.put(("code", code, device_name))
+
+
+def hide_code():
+    _requests.put(("code_hide",))
+
+
+def _code_window(root):
+    window = tkinter.Toplevel(root)
+    window.withdraw()
+    window.title("Wingman pairing")
+    window.overrideredirect(True)
+    window.attributes("-topmost", True)
+    window.configure(bg=GRAPHITE)
+    box = tkinter.Frame(window, bg=GRAPHITE)
+    box.pack(padx=44, pady=32)
+    tkinter.Label(box, text="", font=("Segoe Fluent Icons", 26), fg=WHITE, bg=GRAPHITE).pack()  # link
+    title = tkinter.Label(box, font=("Segoe UI Variable Display Semib", 16), fg=WHITE, bg=GRAPHITE)
+    title.pack(pady=(12, 4))
+    hint = tkinter.Label(box, font=("Segoe UI Variable Text", 11), fg=MUTED, bg=GRAPHITE)
+    hint.pack()
+    digits = tkinter.Label(box, font=("Segoe UI Variable Display", 44), fg=WHITE, bg=GRAPHITE)
+    digits.pack(pady=(16, 8))
+    tkinter.Label(box, text="This closes by itself when pairing is done.", font=("Segoe UI Variable Text", 9),
+                  fg=MUTED, bg=GRAPHITE).pack()
+
+    def show(code, device_name):
+        title.config(text=f"Pair with {device_name}")
+        hint.config(text=f"Type this code on {device_name}")
+        digits.config(text=f"{code[:3]}  {code[3:]}")
+        window.update_idletasks()
+        work = wintypes.RECT()
+        user32.SystemParametersInfoW(0x30, 0, ctypes.byref(work), 0)
+        w, h = window.winfo_reqwidth(), window.winfo_reqheight()
+        window.geometry(f"+{(work.left + work.right - w) // 2}+{(work.top + work.bottom - h) // 2}")
+        window.deiconify()
+        window.update_idletasks()
+        dwmapi.DwmSetWindowAttribute(wintypes.HWND(int(window.wm_frame(), 16)), 33,
+                                     ctypes.byref(ctypes.c_int(2)), 4)  # round corners
+    return show, window.withdraw
 
 
 def _run():
@@ -70,6 +121,7 @@ def _run():
     user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | NOACTIVATE | TOOLWINDOW | TRANSPARENT | LAYERED)
     dwmapi.DwmSetWindowAttribute(wintypes.HWND(hwnd), 33, ctypes.byref(ctypes.c_int(2)), 4)  # round corners
     state = {"until": 0.0, "alpha": 0.0}
+    show_code_window, hide_code_window = _code_window(root)
 
     def place():
         work = wintypes.RECT()
@@ -81,7 +133,14 @@ def _run():
     def poll():
         try:
             while True:
-                glyph, words, level = _requests.get_nowait()
+                request = _requests.get_nowait()
+                if request[0] == "code":
+                    show_code_window(*request[1:])
+                    continue
+                if request[0] == "code_hide":
+                    hide_code_window()
+                    continue
+                _, glyph, words, level = request
                 icon.config(text=glyph)
                 text.config(text=words)
                 if level is None:

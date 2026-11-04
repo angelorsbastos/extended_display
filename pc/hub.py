@@ -665,24 +665,14 @@ def handle(session):
 
 
 class CodePopup:
-    """Shows the 6-digit pairing code on the laptop, and closes it again."""
-
-    TITLE = "Wingman pairing"
+    """Shows the 6-digit pairing code on the laptop (osd.show_code), and closes it again."""
 
     def show(self, code, ipad_name):
         print(f"pairing code for {ipad_name}: {code}")
-        text = (f"Type this code on {ipad_name}:\n\n        {code[:3]} {code[3:]}\n\n"
-                "This window closes by itself when pairing is done.")
-        threading.Thread(target=ctypes.windll.user32.MessageBoxW, daemon=True,
-                         args=(None, text, self.TITLE, 0x40 | 0x40000)).start()  # info icon, on top
+        osd.show_code(code, ipad_name)
 
     def hide(self):
-        for _ in range(10):  # the window may still be opening
-            window = ctypes.windll.user32.FindWindowW(None, self.TITLE)
-            if window:
-                ctypes.windll.user32.PostMessageW(window, 0x10, 0, 0)  # WM_CLOSE
-                return
-            time.sleep(0.1)
+        osd.hide_code()
 
 
 class AlreadyConnected(Exception):
