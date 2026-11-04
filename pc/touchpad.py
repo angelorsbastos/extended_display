@@ -22,7 +22,7 @@ RIDEV_INPUTSINK = 0x100
 RIM_TYPEHID = 2
 HWND_MESSAGE = ctypes.c_void_p(-3)
 HIDP_INPUT, HIDP_STATUS_SUCCESS = 0, 0x00110000
-PAGE_GENERIC, PAGE_DIGITIZER = 0x01, 0x0D
+PAGE_GENERIC, PAGE_BUTTON, PAGE_DIGITIZER = 0x01, 0x09, 0x0D
 USAGE_X, USAGE_Y = 0x30, 0x31
 USAGE_TIP, USAGE_CONTACT_ID, USAGE_CONTACT_COUNT = 0x42, 0x51, 0x54
 
@@ -123,13 +123,20 @@ class _Device:
                                         report, wintypes.ULONG(len(report)))
         return out.value if status == HIDP_STATUS_SUCCESS else None
 
-    def tip(self, link, report):
+    def _usages(self, page, link, report):
         usages = (wintypes.USHORT * 16)()
         length = wintypes.ULONG(16)
-        status = hid.HidP_GetUsages(HIDP_INPUT, wintypes.USHORT(PAGE_DIGITIZER), wintypes.USHORT(link),
+        status = hid.HidP_GetUsages(HIDP_INPUT, wintypes.USHORT(page), wintypes.USHORT(link),
                                     usages, ctypes.byref(length), self.preparsed, report,
                                     wintypes.ULONG(len(report)))
-        return status == HIDP_STATUS_SUCCESS and USAGE_TIP in usages[:length.value]
+        return usages[:length.value] if status == HIDP_STATUS_SUCCESS else []
+
+    def tip(self, link, report):
+        return USAGE_TIP in self._usages(PAGE_DIGITIZER, link, report)
+
+    def button(self, report):
+        """The touchpad's own click (pressing the surface down)."""
+        return 1 in self._usages(PAGE_BUTTON, 0, report)
 
     def contacts(self, report):
         """[(contact id, x 0..1, y 0..1, touching)] in this report."""
@@ -155,7 +162,10 @@ class Touchpad:
 
     def __init__(self, on_gesture, on_report=None):
         self.on_gesture = on_gesture
-        self.on_report = on_report  # for diagnosis: called with the contacts dict
+        # on_report(touching, clicked) after every report: {contact id: (x, y)} of
+        # the fingers down (0..1 of the touchpad), and whether it's pressed down
+        self.on_report = on_report
+        self.clicked = False
         self.listening = threading.Event()
         self.ready = threading.Event()
         self.problem = None
@@ -210,9 +220,10 @@ class Touchpad:
                     self.touching[contact] = (x, y)
                 else:
                     self.touching.pop(contact, None)
+            self.clicked = device.button(report)
             self._track()
             if self.on_report:
-                self.on_report(dict(self.touching))
+                self.on_report(dict(self.touching), self.clicked)
 
     def _track(self):
         fingers = len(self.touching)
