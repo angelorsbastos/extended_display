@@ -66,7 +66,7 @@ struct DashboardView: View {
     }
 
     private func memoryCard(_ memory: LaptopStats.Memory, plan: String?) -> some View {
-        Card(title: "Memory", icon: "memorychip", tint: .purple) {
+        Card(title: "Memory", icon: "memorychip", tint: Theme.secondary) {
             if let used = memory.used, let total = memory.total, total > 0 {
                 Meter(label: "In use", value: used / total, text: String(format: "%.1f of %.1f GB", used, total))
             }
@@ -77,7 +77,7 @@ struct DashboardView: View {
     }
 
     private func batteryCard(_ battery: LaptopStats.BatteryInfo?) -> some View {
-        Card(title: "Battery", icon: batteryIcon(battery), tint: .green) {
+        Card(title: "Battery", icon: batteryIcon(battery), tint: Theme.secondary) {
             BigNumbers(items: [("Charge", battery?.percent.map { "\($0)%" } ?? "–", .white),
                                ("Health", battery?.health.map { "\($0)%" } ?? "–", healthColor(battery?.health))])
             if let full = battery?.fullWh, let design = battery?.designWh {
@@ -173,7 +173,7 @@ private struct Graph: View {
                 .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
             .frame(height: 44)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.04)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.tileRaised.opacity(0.5)))
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -196,7 +196,7 @@ private struct Meter: View {
             }
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.1))
+                    Capsule().fill(Theme.tileRaised)
                     Capsule().fill(value > 0.85 ? Color.red : Color.purple)
                         .frame(width: geometry.size.width * CGFloat(min(max(value, 0), 1)))
                 }

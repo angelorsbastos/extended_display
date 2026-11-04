@@ -40,10 +40,10 @@ struct ShortcutsView: View {
                                 Text("New shortcut")
                                     .font(.headline)
                             }
-                            .foregroundStyle(Color.orange)
+                            .foregroundStyle(Theme.secondary)
                             .frame(maxWidth: .infinity, minHeight: 160)
-                            .background(RoundedRectangle(cornerRadius: 24)
-                                .strokeBorder(Color.orange.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [8])))
+                            .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+                                .strokeBorder(Theme.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [8])))
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -88,7 +88,7 @@ struct ShortcutsView: View {
             VStack(spacing: 14) {
                 Image(systemName: shortcut.icon)
                     .font(.system(size: 40, weight: .semibold))
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Theme.text)
                 Text(shortcut.title)
                     .font(.headline)
                     .foregroundStyle(.white)
@@ -103,7 +103,7 @@ struct ShortcutsView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: isPhone ? 120 : 160)
-            .background(RoundedRectangle(cornerRadius: 24).fill(Color.white.opacity(editing ? 0.14 : 0.08)))
+            .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(editing ? Theme.tileRaised : Theme.tile))
         }
         .buttonStyle(PressableStyle())
         .disabled(!model.connected)
@@ -117,7 +117,7 @@ struct ShortcutsView: View {
             model.saveShortcuts(list)
         } label: {
             Image(systemName: icon)
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Theme.text)
         }
         .buttonStyle(.borderless)
     }
@@ -222,9 +222,9 @@ struct ShortcutEditor: View {
                                 Image(systemName: name)
                                     .font(.title2)
                                     .frame(width: 48, height: 48)
-                                    .foregroundStyle(icon == name ? Color.black : Color.orange)
+                                    .foregroundStyle(icon == name ? Theme.onText : Theme.text)
                                     .background(RoundedRectangle(cornerRadius: 10)
-                                        .fill(icon == name ? Color.orange : Color.white.opacity(0.06)))
+                                        .fill(icon == name ? Theme.on : Theme.tileRaised))
                             }
                             .buttonStyle(.borderless)
                         }

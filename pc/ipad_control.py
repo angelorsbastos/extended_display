@@ -31,6 +31,7 @@ import tkinter
 from ctypes import wintypes
 
 import inputs
+import osd
 import touchpad
 from bluetooth_hid import BluetoothHID
 
@@ -390,14 +391,25 @@ class Hint:
         root.withdraw()
         root.overrideredirect(True)
         root.attributes("-topmost", True)
-        root.attributes("-alpha", 0.92)
-        root.configure(bg="#1c1c1e")
-        title = tkinter.Label(root, font=("Segoe UI Semibold", 13), fg="white", bg="#1c1c1e")
-        subtitle = tkinter.Label(root, font=("Segoe UI", 10), fg="#a0a0a5", bg="#1c1c1e")
-        title.pack(padx=22, pady=(10, 0))
-        subtitle.pack(padx=22, pady=(0, 10))
+        root.attributes("-alpha", 0.97)
+        # Wingman's look (see osd.py): a graphite pill, white text, Windows 11 icons
+        root.configure(bg=osd.GRAPHITE)
+        row = tkinter.Frame(root, bg=osd.GRAPHITE)
+        row.pack(padx=22, pady=12)
+        tkinter.Label(row, text="", font=("Segoe Fluent Icons", 18), fg=osd.WHITE,  # keyboard
+                      bg=osd.GRAPHITE).pack(side="left", padx=(0, 14))
+        words = tkinter.Frame(row, bg=osd.GRAPHITE)
+        words.pack(side="left")
+        title = tkinter.Label(words, font=("Segoe UI Variable Display Semib", 12), fg=osd.WHITE,
+                              bg=osd.GRAPHITE, anchor="w")
+        subtitle = tkinter.Label(words, font=("Segoe UI Variable Text", 10), fg=osd.MUTED, bg=osd.GRAPHITE,
+                                 anchor="w")
+        title.pack(fill="x")
+        subtitle.pack(fill="x")
         root.update_idletasks()
         self.hwnd = int(root.wm_frame(), 16)  # the real top-level window
+        ctypes.WinDLL("dwmapi").DwmSetWindowAttribute(wintypes.HWND(self.hwnd), 33,  # round corners
+                                                      ctypes.byref(ctypes.c_int(2)), 4)
         hide_at = [None]
 
         def poll():
@@ -412,7 +424,7 @@ class Hint:
                     title.config(text=text)
                     subtitle.config(text=small or "")
                     if small:
-                        subtitle.pack(padx=22, pady=(0, 10))
+                        subtitle.pack(fill="x")
                     else:
                         subtitle.pack_forget()
                     root.update_idletasks()

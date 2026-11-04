@@ -35,7 +35,7 @@ struct ConnectionPanel: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 22).fill(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 
     @ViewBuilder private var wifiRow: some View {
@@ -124,7 +124,7 @@ struct ConnectionBadge: View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: transport == nil ? 9 : 13, weight: .semibold))
-                .foregroundStyle(transport == nil ? Color.gray : Color.green)
+                .foregroundStyle(transport == nil ? Theme.warm : Theme.good)
             if !isPhone {  // no room on a phone's title bar: the icon and its colour say it
                 Text(text)
                     .font(.callout)
@@ -133,7 +133,7 @@ struct ConnectionBadge: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Capsule().fill(Color.white.opacity(0.08)))
+        .background(Capsule().fill(Theme.tile))
     }
 }
 
@@ -143,21 +143,28 @@ struct TopBar: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        ZStack {
-            Text(title)
-                .font(.title2.bold())
-            HStack {
-                Button {
-                    model.goHome()
-                } label: {
-                    Label("Home", systemImage: "chevron.left")
-                        .font(.title3.weight(.semibold))
-                }
-                Spacer()
-                ConnectionBadge(transport: model.transport)
+        HStack(spacing: 14) {
+            Button {
+                model.tap()
+                model.goHome()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Theme.tile))
             }
+            .buttonStyle(PressableStyle())
+            .accessibilityLabel("Home")
+            Text(title)
+                .font(.system(size: isPhone ? 26 : 30, weight: .bold, design: .rounded))
+                .lineLimit(1)
+            Spacer()
+            Circle()
+                .fill(model.connected ? Theme.good : Theme.warm)
+                .frame(width: 10, height: 10)
+                .accessibilityLabel(model.connected ? "Connected" : "Not connected")
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.text)
     }
 }
 

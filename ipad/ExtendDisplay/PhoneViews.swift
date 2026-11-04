@@ -20,7 +20,7 @@ struct TrackpadView: View {
         VStack(spacing: 12) {
             TopBar(title: "Trackpad", model: model)
             TouchpadSurfaceView(send: model.pointer)
-                .background(RoundedRectangle(cornerRadius: 24).fill(Color.white.opacity(0.07)))
+                .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
                 .overlay(alignment: .bottom) {
                     Text("Tap to click · two fingers to scroll or right-click · hold to drag")
                         .font(.caption)
@@ -73,7 +73,7 @@ struct TrackpadView: View {
             Label(title, systemImage: icon)
                 .font(.callout.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)))
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.tile))
         }
         .buttonStyle(PressableStyle())
     }
@@ -288,7 +288,7 @@ struct DockView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 22).fill(Color.white.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
     }
 
     private var shortcutsRow: some View {
@@ -301,13 +301,13 @@ struct DockView: View {
                         VStack(spacing: 6) {
                             Image(systemName: shortcut.icon)
                                 .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(Color.orange)
+                                .foregroundStyle(Theme.text)
                             Text(shortcut.title)
                                 .font(.caption2)
                                 .lineLimit(1)
                         }
                         .frame(width: 76, height: 66)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.08)))
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.tile))
                     }
                     .buttonStyle(PressableStyle())
                 }
