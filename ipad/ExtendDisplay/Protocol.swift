@@ -15,10 +15,29 @@ enum Transport: String {
     case remote  // Wi-Fi port, but arriving through Tailscale (away from home)
 }
 
-struct Shortcut: Decodable, Identifiable, Equatable {
-    let id: String
-    let title: String
-    let icon: String  // SF Symbol name
+/// One shortcut button, as in pc/shortcuts.json: exactly one of keys / open / run / lock.
+struct Shortcut: Codable, Identifiable, Equatable {
+    var id: String
+    var title: String
+    var icon: String     // SF Symbol name
+    var keys: [String]?  // a key combination, e.g. ["win", "shift", "s"] (names: pc/actions.py)
+    var open: String?    // an app (shell:AppsFolder\...), file, folder or website
+    var run: String?     // a command
+    var lock: Bool?
+
+    /// For the laptop (save_shortcuts / try_shortcut).
+    var json: [String: Any] {
+        guard let data = try? JSONEncoder().encode(self),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        return object
+    }
+}
+
+/// An app on the laptop's Start menu (list_apps).
+struct LaptopApp: Decodable, Identifiable, Equatable {
+    let name: String
+    let open: String
+    var id: String { open }
 }
 
 struct NowPlaying: Decodable, Equatable {
@@ -58,6 +77,7 @@ struct ControlsState: Decodable, Equatable {
 struct LaptopMessage: Decodable {
     let type: String
     let shortcuts: [Shortcut]?
+    let apps: [LaptopApp]?
     let nowPlaying: NowPlaying?
     let controls: ControlsState?
     let width: Int?

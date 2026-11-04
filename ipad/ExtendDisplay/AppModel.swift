@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     @Published var pairedLaptops = 0
     @Published var screen: Screen = .home
     @Published var shortcuts: [Shortcut] = []
+    /// The laptop's Start menu apps, for the shortcut editor (asked for with requestApps).
+    @Published var laptopApps: [LaptopApp]?
     @Published var nowPlaying: NowPlaying?
     /// Changed by the laptop's updates, and right away by the Controls screen
     /// (so a switch flips instantly instead of after the next update).
@@ -191,6 +193,21 @@ final class AppModel: ObservableObject {
         server.send(json: ["type": "shortcut", "id": shortcut.id])
     }
 
+    /// Keep this list on the laptop (it answers with the saved list, as hello).
+    func saveShortcuts(_ list: [Shortcut]) {
+        shortcuts = list  // show it right away
+        server.send(json: ["type": "save_shortcuts", "shortcuts": list.map(\.json)])
+    }
+
+    /// Run a shortcut that isn't saved yet, to see what it does.
+    func tryShortcut(_ shortcut: Shortcut) {
+        server.send(json: ["type": "try_shortcut", "shortcut": shortcut.json])
+    }
+
+    func requestApps() {
+        server.send(json: ["type": "list_apps"])
+    }
+
     func media(_ action: String) {
         server.send(json: ["type": "media", "action": action])
     }
@@ -348,6 +365,8 @@ final class AppModel: ObservableObject {
             switch message.type {
             case "hello":
                 self.shortcuts = message.shortcuts ?? []
+            case "apps":
+                self.laptopApps = message.apps ?? []
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
             case "controls":
