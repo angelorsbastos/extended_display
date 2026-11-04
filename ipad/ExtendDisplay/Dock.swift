@@ -132,9 +132,16 @@ struct DockView: View {
             VStack(alignment: .leading, spacing: 4) {
                 EqualizerBars(playing: playing.playing, color: night ? Self.nightRed : Theme.text)
                     .padding(.bottom, 6)
-                Text(playing.title)
-                    .font(.system(size: isPhone ? 19 : 28, weight: .semibold))
-                    .lineLimit(2)
+                HStack(alignment: .center, spacing: isPhone ? 12 : 20) {
+                    Text(playing.title)
+                        .font(.system(size: isPhone ? 19 : 28, weight: .semibold))
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    if model.controls?.volume != nil {
+                        DockVolume(model: model, color: night ? Self.nightRed : Theme.text)
+                            .frame(width: isPhone ? 72 : 120)
+                    }
+                }
                 Text(playing.artist.isEmpty ? playing.app : playing.artist)
                     .font(.system(size: isPhone ? 14 : 18))
                     .foregroundStyle(night ? Self.nightDim : Theme.secondary)
@@ -446,6 +453,85 @@ private struct BreathingGlow: View {
 }
 
 /// Four bars bouncing while music plays, still when it's paused.
+/// The laptop's volume as a thin line next to the song. It fades out after a
+/// few seconds so the Dock stays calm, but keeps working: sliding where it was
+/// brings it back. Sliding moves it from where it is (it doesn't jump to the
+/// finger), so touching the hidden line never changes the volume by surprise.
+private struct DockVolume: View {
+    @ObservedObject var model: AppModel
+    let color: Color
+    static let visibleSeconds = 3.0
+
+    @State private var level = 0.0
+    @State private var startLevel: Double?
+    @State private var visible = true
+    @State private var hide: DispatchWorkItem?
+    @State private var lastSent = Date.distantPast
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let dragging = startLevel != nil
+            ZStack(alignment: .leading) {
+                Capsule().fill(color.opacity(0.2))
+                Capsule().fill(color).frame(width: max(width * level, dragging ? 8 : 5))
+            }
+            .frame(height: dragging ? 8 : 5)
+            .frame(maxHeight: .infinity)
+            .opacity(visible ? 1 : 0)
+            .contentShape(Rectangle())  // still there to slide when it's hidden
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { drag in
+                    if startLevel == nil {
+                        startLevel = level
+                        appear()
+                    }
+                    level = min(max((startLevel ?? level) + drag.translation.width / width, 0), 1)
+                    if Date().timeIntervalSince(lastSent) > 0.1 {
+                        lastSent = Date()
+                        send()
+                    }
+                }
+                .onEnded { _ in
+                    startLevel = nil
+                    send()
+                    haptic()
+                    fadeLater()
+                })
+            .animation(.easeOut(duration: 0.15), value: dragging)
+        }
+        .frame(height: 44)
+        .animation(.easeInOut(duration: 0.6), value: visible)
+        .animation(.interactiveSpring(response: 0.25), value: level)
+        .onAppear {
+            level = Double(model.controls?.volume ?? 0) / 100
+            fadeLater()
+        }
+        .onChange(of: model.controls?.volume) { newValue in
+            if startLevel == nil, let newValue { level = Double(newValue) / 100 }
+        }
+        .accessibilityLabel("Laptop volume")
+    }
+
+    private func send() {
+        let value = Int((level * 100).rounded())
+        model.controls?.volume = value
+        model.control("volume", value)
+    }
+
+    private func appear() {
+        hide?.cancel()
+        visible = true
+    }
+
+    private func fadeLater() {
+        hide?.cancel()
+        let work = DispatchWorkItem { visible = false }
+        hide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.visibleSeconds, execute: work)
+    }
+}
+
 private struct EqualizerBars: View {
     let playing: Bool
     let color: Color
