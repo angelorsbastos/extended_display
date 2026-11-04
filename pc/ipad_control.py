@@ -26,6 +26,7 @@ of our windows is in front, so the hint window is brought to the front and the
 previous window gets the focus back afterwards.
 """
 import ctypes
+import os
 import queue
 import threading
 import time
@@ -243,7 +244,9 @@ class Controller:
             time.sleep(0.25)
             if not self.active or self.started != started or self.bluetooth.connected:
                 return
-        self._leave("The iPad didn't connect. Is Bluetooth on, and “LAPRÉ” paired in its "
+        # the iPad lists the laptop under its Windows computer name
+        name = os.environ.get("COMPUTERNAME", "this laptop")
+        self._leave(f"The iPad didn't connect. Is Bluetooth on, and “{name}” paired in its "
                     "Settings > Bluetooth?")
 
     def _stay_in_front(self):

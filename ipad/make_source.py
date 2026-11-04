@@ -24,8 +24,11 @@ source = {
         "name": "Wingman",
         "bundleIdentifier": "dev.extenddisplay.app",
         "developerName": "angelorsbastos",
-        "subtitle": "Use the iPad as a second screen over USB.",
-        "localizedDescription": "Receives a Windows monitor over the USB cable and shows it full-screen.",
+        "subtitle": "Your iPad and iPhone, beside your Windows laptop.",
+        "localizedDescription": ("A second screen, a remote and a desk clock for your Windows laptop: "
+                                 "extend or mirror its screen, play its sound, control volume, music and "
+                                 "shortcuts, share the clipboard and files, over the cable, Wi-Fi or "
+                                 "Tailscale. Needs the Wingman hub running on the laptop."),
         "iconURL": ICON_URL,
         "versions": [{
             "version": version,

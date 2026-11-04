@@ -1,7 +1,7 @@
 """The laptop as a Bluetooth keyboard + trackpad (+ mouse) for the iPad (HID over GATT).
 
 Windows lets an app publish the HID service; the iPad pairs with the laptop
-("LAPRÉ" in Settings > Bluetooth) and uses it like any Bluetooth keyboard and
+(under its Windows computer name in Settings > Bluetooth) and uses it like any Bluetooth keyboard and
 trackpad. What made the iPad accept it (a bare HID service was paired but never
 used): boot keyboard/mouse reports, a keyboard LED output report and a Battery
 service next to it. Windows refuses the Device Information service ("disabled
