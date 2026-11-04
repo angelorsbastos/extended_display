@@ -14,3 +14,4 @@ pc/extend_layout.json
 pc/hub.log
 # pairing keys (DPAPI-encrypted, but personal)
 pc/pairings.json
+pc/shortcuts.user.json

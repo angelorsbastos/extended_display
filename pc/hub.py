@@ -20,8 +20,11 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     log {text} (diagnostics, printed to the hub's log),
                     keyframe (re-send the current picture as a full keyframe),
                     watch_controls {on}, control {name, value} (see controls.apply),
+                    save_shortcuts {shortcuts} (the whole list, see actions.save_shortcuts),
+                    try_shortcut {shortcut} (run one without saving), list_apps,
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
-    laptop -> iPad: hello {shortcuts}, video_started {width, height},
+    laptop -> iPad: hello {shortcuts} (also after save_shortcuts), apps {apps: [{name, open}]},
+                    video_started {width, height},
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
                     now_playing {now_playing}, error {message}, clipboard,
                     controls {controls} (see controls.state)
@@ -33,6 +36,7 @@ import ctypes
 import json
 import socket
 import struct
+import subprocess
 import threading
 import time
 import traceback
@@ -380,8 +384,8 @@ def start_capture(session, name, attempts=5):
 def handle(session):
     shortcuts = actions.load_shortcuts()
     by_id = {s["id"]: s for s in shortcuts}
-    session.send_json({"type": "hello", "shortcuts": [
-        {"id": s["id"], "title": s["title"], "icon": s["icon"]} for s in shortcuts]})
+    # the whole definitions: the iPad edits them (save_shortcuts)
+    session.send_json({"type": "hello", "shortcuts": shortcuts})
     threading.Thread(target=send_now_playing, args=(session,), daemon=True).start()
 
     clip = ClipboardSync(session)
@@ -532,6 +536,28 @@ def handle(session):
                     print(f"shortcut {msg['id']} failed: {e}")
             elif kind == "media" and msg.get("action") in actions.MEDIA_KEYS:
                 actions.media(msg["action"])
+            elif kind == "save_shortcuts":
+                try:
+                    shortcuts = actions.save_shortcuts(msg.get("shortcuts"))
+                except (ValueError, OSError) as e:
+                    session.send_json({"type": "error", "message": f"Couldn't save the shortcuts: {e}"})
+                else:
+                    by_id.clear()
+                    by_id.update({s["id"]: s for s in shortcuts})
+                    print(f"shortcuts saved ({len(shortcuts)})")
+                session.send_json({"type": "hello", "shortcuts": actions.load_shortcuts()})
+            elif kind == "try_shortcut":
+                try:
+                    actions.run_shortcut(actions.check_shortcut(msg.get("shortcut")))
+                except (ValueError, OSError) as e:
+                    session.send_json({"type": "error", "message": f"That didn't work: {e}"})
+            elif kind == "list_apps":
+                def send_apps():
+                    try:
+                        session.send_json({"type": "apps", "apps": actions.start_apps()})
+                    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+                        print(f"listing apps failed: {e}")
+                threading.Thread(target=send_apps, daemon=True).start()  # takes a few seconds
     except Exception:
         traceback.print_exc()
     finally:
