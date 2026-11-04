@@ -648,7 +648,7 @@ def handle(session):
                     # an app, file or folder gets its own icon, unless the iPad chose a symbol ("")
                     for wanted in msg.get("shortcuts") or []:
                         if isinstance(wanted, dict) and wanted.get("open") and "image" not in wanted:
-                            wanted["image"] = controls._worker.submit(icons.png, wanted["open"]).result() or ""
+                            wanted["image"] = icons.for_target(wanted["open"], controls._worker) or ""
                     shortcuts = actions.save_shortcuts(msg.get("shortcuts"))
                 except (ValueError, OSError) as e:
                     session.send_json({"type": "error", "message": f"Couldn't save the shortcuts: {e}"})
@@ -667,7 +667,7 @@ def handle(session):
             elif kind == "app_icon":  # the shortcut editor's app list, one icon at a time
                 def send_icon(target=str(msg.get("open", ""))):
                     try:
-                        png = controls._worker.submit(icons.png, target).result()
+                        png = icons.for_target(target, controls._worker)
                         session.send_json({"type": "app_icon", "open": target, "png": png or ""})
                     except OSError:
                         pass
