@@ -1,0 +1,58 @@
+{
+  "intro": {
+    "lead": 0.128,
+    "speech": 0.96
+  },
+  "laptop": {
+    "lead": 0.128,
+    "speech": 0.661
+  },
+  "ipad": {
+    "lead": 0.107,
+    "speech": 0.725
+  },
+  "iphone": {
+    "lead": 0.128,
+    "speech": 0.768
+  },
+  "dock": {
+    "lead": 0.128,
+    "speech": 0.661
+  },
+  "music": {
+    "lead": 0.128,
+    "speech": 0.619
+  },
+  "focus": {
+    "lead": 0.128,
+    "speech": 0.96
+  },
+  "night": {
+    "lead": 0.128,
+    "speech": 2.752
+  },
+  "controls": {
+    "lead": 0.128,
+    "speech": 2.155
+  },
+  "sliders": {
+    "lead": 0.128,
+    "speech": 1.984
+  },
+  "dash": {
+    "lead": 0.107,
+    "speech": 2.837
+  },
+  "phone": {
+    "lead": 0.128,
+    "speech": 1.963
+  },
+  "more": {
+    "lead": 0.128,
+    "speech": 1.109
+  },
+  "end": {
+    "lead": 0.128,
+    "speech": 1.877
+  }
+}
