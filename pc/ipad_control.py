@@ -14,7 +14,7 @@ laptop's pointer still. Without a precision touchpad, pointer movement, clicks
 and the wheel are sent as a mouse instead (the pointer waits mid-screen and
 its movements are forwarded).
 
-Keys map like Extend Display does the other way round: Ctrl -> Cmd (so Ctrl+C
+Keys map like Wingman does the other way round: Ctrl -> Cmd (so Ctrl+C
 copies on the iPad), Alt -> Option, Win -> Ctrl, AltGr -> right Option.
 
 Three/four-finger gestures never pass through the hooks: Windows' shell takes
@@ -73,7 +73,7 @@ WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL = 0x0200, 0x020A, 0x020E
 MOUSE_BUTTON_MESSAGES = {0x0201: (1, True), 0x0202: (1, False), 0x0204: (2, True), 0x0205: (2, False),
                          0x0207: (4, True), 0x0208: (4, False)}
 
-# (PC scan code, extended) -> HID usage: Extend Display's iPad -> PC table, reversed.
+# (PC scan code, extended) -> HID usage: Wingman's iPad -> PC table, reversed.
 # The key left of Enter on ISO keyboards (Portuguese: ~ ^) is HID 50, not 49.
 SCAN_TO_HID = {scan: usage for usage, scan in inputs.HID_TO_SCAN.items() if usage != 49}
 ALTGR_FAKE_CTRL = 0x21D  # Windows' extra left-Ctrl that comes with every AltGr press

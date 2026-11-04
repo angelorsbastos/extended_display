@@ -16,12 +16,12 @@ ICON_URL = (f"https://raw.githubusercontent.com/{REPO}/main/"
 version, build, ipa_path, download_url, out_path = sys.argv[1:6]
 
 source = {
-    "name": "Extend Display",
+    "name": "Wingman",
     "identifier": "dev.extenddisplay.source",
     "sourceURL": SOURCE_URL,
     "iconURL": ICON_URL,
     "apps": [{
-        "name": "Extend Display",
+        "name": "Wingman",
         "bundleIdentifier": "dev.extenddisplay.app",
         "developerName": "angelorsbastos",
         "subtitle": "Use the iPad as a second screen over USB.",

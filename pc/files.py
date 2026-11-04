@@ -208,7 +208,7 @@ def _outbox_loop(server):
                 paths = [pathlib.Path(p) for p in request.get("paths", [])]
                 sender = _active["sender"]
                 if sender is None:
-                    reply = {"error": "The iPad isn't connected. Open Extend Display on it first."}
+                    reply = {"error": "The iPad isn't connected. Open Wingman on it first."}
                 elif missing := [p.name for p in paths if not p.exists()]:
                     reply = {"error": f"Not found: {', '.join(missing)}"}
                 else:

@@ -44,7 +44,7 @@ struct FilesView: View {
                     section("From the laptop") {
                         if files.received.isEmpty {
                             Text("Nothing yet. On the laptop, right-click a file > Show more options > "
-                                 + "Send to > iPad (Extend Display).")
+                                 + "Send to > iPad (Wingman).")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -53,8 +53,8 @@ struct FilesView: View {
                         }
                     }
                     Text("What you send lands in the laptop's Downloads folder. Files from the laptop are "
-                         + "also in the Files app: On My iPad > Extend Display > From laptop. Other apps can "
-                         + "send here too: Share > Extend Display.")
+                         + "also in the Files app: On My iPad > Wingman > From laptop. Other apps can "
+                         + "send here too: Share > Wingman.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

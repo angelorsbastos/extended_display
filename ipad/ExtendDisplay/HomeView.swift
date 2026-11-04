@@ -10,7 +10,7 @@ struct HomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
             HStack {
-                Text("Extend Display")
+                Text("Wingman")
                     .font(.largeTitle.bold())
                 Spacer()
                 if model.connected {

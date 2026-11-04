@@ -87,6 +87,6 @@ jobs:
           latest=true
           if [ "$newest" -gt "$BUILD" ]; then latest=false; fi
           gh release create "$tag" ExtendDisplay.ipa source.json \
-            --title "Extend Display $VERSION" \
+            --title "Wingman $VERSION" \
             --notes "Built from ${{ github.sha }}" \
             --latest="$latest"
