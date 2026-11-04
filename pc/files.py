@@ -24,6 +24,8 @@ import threading
 import time
 import uuid
 
+import osd
+
 MSG_FILE = 5
 CHUNK = 64 * 1024
 OUTBOX_PORT = 7010  # localhost only: sendfile.py -> hub
@@ -106,6 +108,7 @@ class Receiver:
             return
         part.replace(transfer["path"])
         print(f"saved {transfer['path']}")
+        osd.show("file", f"Saved {transfer['path'].name} to Downloads")
         self.session.send_json({"type": "file_saved", "id": message["id"], "name": transfer["path"].name})
 
     def cancel(self, message):
