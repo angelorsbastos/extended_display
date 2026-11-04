@@ -1,0 +1,20 @@
+{
+  "voice": "en-US-AndrewMultilingualNeural",
+  "rate": "-4%",
+  "lines": {
+    "intro": "This is Wingman.",
+    "laptop": "Your laptop.",
+    "ipad": "On your iPad.",
+    "iphone": "And your iPhone.",
+    "dock": "Meet the Dock.",
+    "music": "Your music.",
+    "focus": "A focus timer.",
+    "night": "And at ten, it fades to a soft red.",
+    "controls": "Your whole laptop, one tap away.",
+    "sliders": "Sound, volume, brightness.",
+    "dash": "Its heat, fans and battery. Live.",
+    "phone": "And your iPhone? It's a trackpad.",
+    "more": "And there's so much more.",
+    "end": "Wingman. Built by Ângelo."
+  }
+}
