@@ -24,8 +24,10 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     save_shortcuts {shortcuts} (the whole list, see actions.save_shortcuts),
                     try_shortcut {shortcut} (run one without saving), list_apps,
                     watch_stats {on} (the Dashboard is open: send stats every 2 s),
+                    laptop_input {on} (switch Ctrl+Alt+I from the device),
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
-    laptop -> iPad: hello {shortcuts} (also after save_shortcuts), apps {apps: [{name, open}]},
+    laptop -> iPad: hello {shortcuts, laptop_name, laptop_input} (also after save_shortcuts),
+                    laptop_input {on} (Ctrl+Alt+I switched), apps {apps: [{name, open}]},
                     video_started {width, height},
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
                     now_playing {now_playing}, error {message}, clipboard, stats {stats} (stats.read()),
@@ -418,7 +420,8 @@ def handle(session):
     shortcuts = actions.load_shortcuts()
     by_id = {s["id"]: s for s in shortcuts}
     # the whole definitions: the iPad edits them (save_shortcuts)
-    session.send_json({"type": "hello", "shortcuts": shortcuts})
+    session.send_json({"type": "hello", "shortcuts": shortcuts, "laptop_name": socket.gethostname(),
+                       "laptop_input": ipad_control.is_active()})
     threading.Thread(target=send_now_playing, args=(session,), daemon=True).start()
 
     clip = ClipboardSync(session)
@@ -427,6 +430,13 @@ def handle(session):
     touch = touchscreen()
     receiver = files.Receiver(session)
     sender = files.Sender(session)
+
+    def laptop_input_changed(active):  # Ctrl+Alt+I switched, from the laptop or a device
+        try:
+            session.send_json({"type": "laptop_input", "on": active})
+        except OSError:
+            pass
+    ipad_control.listeners.add(laptop_input_changed)
     # Explorer's "Send to > iPad": the iPad when there is one, else the iPhone
     files.set_active_sender(sender, only_if=None if session.device == "ipad" else files.NOBODY)
 
@@ -539,6 +549,8 @@ def handle(session):
                 controls_watch.watch(bool(msg.get("on")))
             elif kind == "watch_stats":
                 stats_watch.watch(bool(msg.get("on")))
+            elif kind == "laptop_input":
+                ipad_control.request(bool(msg.get("on")))
             elif kind == "sound":
                 set_sound(bool(msg.get("on")))
             elif kind == "control":
@@ -604,6 +616,7 @@ def handle(session):
         if sound:
             sound.stop()
         receiver.close()
+        ipad_control.listeners.discard(laptop_input_changed)
         files.set_active_sender(None, only_if=sender)
         if displays:
             displays.close()
@@ -835,7 +848,7 @@ def run(stop, on_status=print):
     except OSError as e:
         print(f"Send to iPad unavailable: {e}")
     try:
-        ipad_control.Controller()  # Ctrl+Alt+I: keyboard and trackpad -> iPad, over Bluetooth
+        ipad_control.start()  # Ctrl+Alt+I: keyboard and trackpad -> iPad, over Bluetooth
     except Exception as e:  # missing Bluetooth libraries, no Tk...: the rest still works
         print(f"Controlling the iPad from the laptop is unavailable: {e!r}")
     running = {}  # connection key -> (Session, thread)

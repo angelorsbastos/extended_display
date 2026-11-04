@@ -99,14 +99,10 @@ struct RootView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.ignoresSafeArea()
+                Theme.background.ignoresSafeArea()
                 switch model.screen {
                 case .home:
-                    if isPhone {
-                        PhoneHomeView(model: model)
-                    } else {
-                        HomeView(model: model)
-                    }
+                    ControlCenterView(model: model, history: model.clipboardHistory, files: model.files)
                 case .video:
                     VideoScreen(model: model)
                 case .shortcuts:

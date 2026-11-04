@@ -284,7 +284,14 @@ def _state():
         "keep_awake": keep_awake.on.is_set(),
         "power_plans": plans,
         "power_plan": active_plan,
+        "cpu_temp": _safe(_cpu_temp),
     }
+
+
+def _cpu_temp():
+    """°C from the ASUS ACPI driver: cheap, unlike the GPU (stats.py)."""
+    import stats  # here: stats imports this module
+    return stats._asus()[0]
 
 
 def _apply(name, value):
