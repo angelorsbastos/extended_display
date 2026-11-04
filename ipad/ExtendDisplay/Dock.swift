@@ -158,8 +158,7 @@ struct DockView: View {
                     model.tap()
                     model.run(shortcut)
                 } label: {
-                    Image(systemName: shortcut.icon)
-                        .font(.system(size: side * 0.36, weight: .semibold))
+                    ShortcutIcon(shortcut: shortcut, size: side * 0.36)
                         .frame(width: side, height: side)
                         .background(RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
                             .fill(night ? Self.nightRed.opacity(0.12) : Color.white.opacity(0.07)))
@@ -216,8 +215,7 @@ struct DockView: View {
                             model.run(shortcut)
                         } label: {
                             VStack(spacing: 6) {
-                                Image(systemName: shortcut.icon)
-                                    .font(.system(size: 20, weight: .semibold))
+                                ShortcutIcon(shortcut: shortcut, size: 20)
                                     .frame(width: 54, height: 54)
                                     .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.tile))
                                 Text(shortcut.title)
@@ -635,7 +633,7 @@ struct DockShortcutPicker: View {
                     }
                 } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: shortcut.icon).frame(width: 28)
+                        ShortcutIcon(shortcut: shortcut, size: 18).frame(width: 28)
                         Text(shortcut.title)
                         Spacer()
                         if chosen.contains(shortcut.id) {

@@ -86,8 +86,7 @@ struct ShortcutsView: View {
             }
         } label: {
             VStack(spacing: 14) {
-                Image(systemName: shortcut.icon)
-                    .font(.system(size: 40, weight: .semibold))
+                ShortcutIcon(shortcut: shortcut, size: isPhone ? 30 : 40)
                     .foregroundStyle(Theme.text)
                 Text(shortcut.title)
                     .font(.headline)
@@ -140,13 +139,35 @@ struct ShortcutEditor: View {
         (UInt8(ascii: "a")...UInt8(ascii: "z")).map { String(UnicodeScalar($0)) } + (0...9).map { "\($0)" }
         + (1...12).map { "f\($0)" }
         + ["tab", "esc", "enter", "space", "delete", "printscreen", "left", "right", "up", "down"]
+    /// Symbols to choose from, grouped loosely: system, files, work, media, web, other.
     static let icons = [
-        "star", "camera.viewfinder", "square.grid.2x2", "desktopcomputer", "folder", "doc.text",
-        "chart.bar.xaxis", "music.note", "play.fill", "chevron.left.forwardslash.chevron.right", "terminal",
-        "lock.fill", "globe", "safari", "envelope", "message", "bubble.left", "calendar", "note.text",
-        "book", "gamecontroller", "paintbrush", "photo", "video", "mic", "speaker.wave.2", "keyboard",
-        "command", "magnifyingglass", "printer", "scissors", "doc.on.clipboard", "arrow.clockwise",
-        "bolt", "heart", "house", "gearshape", "moon", "sun.max", "wifi", "cart", "app.badge", "power",
+        // system and windows
+        "desktopcomputer", "laptopcomputer", "display", "macwindow", "square.grid.2x2", "rectangle.split.3x1",
+        "uiwindow.split.2x1", "rectangle.on.rectangle", "camera.viewfinder", "crop", "lock.fill", "power",
+        "moon.fill", "sun.max.fill", "gearshape.fill", "slider.horizontal.3", "keyboard", "command",
+        "option", "magnifyingglass", "arrow.clockwise", "trash", "battery.100", "wifi", "printer.fill",
+        // files and documents
+        "folder.fill", "folder.badge.plus", "tray.full.fill", "archivebox.fill", "doc.fill", "doc.text.fill",
+        "doc.on.clipboard", "list.bullet.clipboard", "note.text", "book.fill", "books.vertical.fill",
+        "bookmark.fill", "paperclip", "externaldrive.fill", "icloud.fill", "arrow.down.circle.fill",
+        // work and study
+        "chevron.left.forwardslash.chevron.right", "terminal.fill", "curlybraces", "hammer.fill",
+        "wrench.and.screwdriver.fill", "cpu", "memorychip", "chart.bar.xaxis", "chart.pie.fill",
+        "tablecells", "function", "graduationcap.fill", "pencil.and.ruler.fill", "calendar", "clock.fill",
+        "timer", "checklist", "list.bullet", "briefcase.fill", "lightbulb.fill", "brain.head.profile",
+        // media and creative
+        "music.note", "music.note.list", "headphones", "speaker.wave.2.fill", "mic.fill", "play.fill",
+        "play.rectangle.fill", "video.fill", "film.fill", "tv.fill", "photo.fill", "camera.fill",
+        "paintbrush.fill", "paintpalette.fill", "scribble", "wand.and.stars", "gamecontroller.fill",
+        "dice.fill", "puzzlepiece.fill",
+        // web and people
+        "globe", "safari.fill", "link", "envelope.fill", "message.fill", "bubble.left.fill", "phone.fill",
+        "video.bubble.left.fill", "person.fill", "person.2.fill", "cart.fill", "bag.fill", "creditcard.fill",
+        "map.fill", "location.fill", "airplane", "car.fill", "tram.fill",
+        // other
+        "star.fill", "heart.fill", "flag.fill", "bell.fill", "bolt.fill", "flame.fill", "leaf.fill",
+        "drop.fill", "cup.and.saucer.fill", "fork.knife", "house.fill", "building.2.fill", "sparkles",
+        "app.badge", "square.and.arrow.up", "arrow.triangle.2.circlepath", "shield.fill", "key.fill",
     ]
 
     @ObservedObject var model: AppModel
@@ -164,6 +185,8 @@ struct ShortcutEditor: View {
     @State private var command: String
     @State private var pickingApp = false
     @State private var confirmingDelete = false
+    @State private var useAppIcon: Bool  // an App shortcut shows the app's own icon
+    @State private var appImage: String?
     @Environment(\.dismiss) private var dismiss
 
     init(model: AppModel, draft: Shortcut, isNew: Bool, done: @escaping (Result) -> Void) {
@@ -181,6 +204,8 @@ struct ShortcutEditor: View {
         _appOpen = State(initialValue: isWebsite ? "" : open)
         _url = State(initialValue: isWebsite ? open : "https://")
         _command = State(initialValue: draft.run ?? "")
+        _useAppIcon = State(initialValue: draft.image != "")
+        _appImage = State(initialValue: draft.image?.isEmpty == false ? draft.image : nil)
         _kind = State(initialValue: draft.keys != nil ? .keys : draft.lock == true ? .lock
                       : draft.run != nil ? .command : draft.open == nil ? .keys : isWebsite ? .website : .app)
     }
@@ -189,12 +214,21 @@ struct ShortcutEditor: View {
         var s = Shortcut(id: id, title: title.trimmingCharacters(in: .whitespaces), icon: icon)
         switch kind {
         case .keys: s.keys = Self.modifiers.filter(held.contains) + [key]
-        case .app: s.open = appOpen
+        case .app:
+            s.open = appOpen
+            // nil: the laptop adds the icon when saving; "": keep the symbol
+            s.image = useAppIcon ? (appImage ?? currentAppIcon) : ""
         case .website: s.open = url.trimmingCharacters(in: .whitespaces)
         case .command: s.run = command
         case .lock: s.lock = true
         }
         return s
+    }
+
+    /// The picked app's icon, once the laptop has sent it.
+    private var currentAppIcon: String? {
+        guard let icon = model.appIcons[appOpen], !icon.isEmpty else { return nil }
+        return icon
     }
 
     private var canSave: Bool {
@@ -214,6 +248,25 @@ struct ShortcutEditor: View {
                     TextField("e.g. Screenshot", text: $title)
                 }
                 Section("Icon") {
+                    if kind == .app {
+                        Picker("Icon", selection: $useAppIcon) {
+                            Text("App's own icon").tag(true)
+                            Text("Symbol").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    if kind == .app && useAppIcon {
+                        HStack(spacing: 14) {
+                            if let picture = ShortcutIcon.image(appImage ?? currentAppIcon) {
+                                Image(uiImage: picture).resizable().scaledToFit().frame(width: 48, height: 48)
+                                Text("The app's own icon").foregroundStyle(Theme.secondary)
+                            } else {
+                                Image(systemName: "app.dashed").font(.title).frame(width: 48, height: 48)
+                                Text(appOpen.isEmpty ? "Choose an app below" : "The laptop adds it when you save")
+                                    .foregroundStyle(Theme.secondary)
+                            }
+                        }
+                    } else {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 52))], spacing: 12) {
                         ForEach(Self.icons, id: \.self) { name in
                             Button {
@@ -230,6 +283,7 @@ struct ShortcutEditor: View {
                         }
                     }
                     .padding(.vertical, 6)
+                    }
                 }
                 Section("What it does on the laptop") {
                     Picker("Action", selection: $kind) {
@@ -263,6 +317,8 @@ struct ShortcutEditor: View {
             .sheet(isPresented: $pickingApp) {
                 AppPicker(model: model) { app in
                     appOpen = app.open
+                    appImage = nil  // a different app: its own icon
+                    model.requestAppIcon(app.open)
                     if title.isEmpty { title = app.name }
                     pickingApp = false
                 }
@@ -337,7 +393,20 @@ struct AppPicker: View {
             Group {
                 if let apps = model.laptopApps {
                     List(apps.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) }) { app in
-                        Button(app.name) { picked(app) }
+                        Button {
+                            picked(app)
+                        } label: {
+                            HStack(spacing: 14) {
+                                if let icon = ShortcutIcon.image(model.appIcons[app.open]) {
+                                    Image(uiImage: icon).resizable().scaledToFit().frame(width: 32, height: 32)
+                                } else {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Theme.tileRaised).frame(width: 32, height: 32)
+                                }
+                                Text(app.name).foregroundStyle(Theme.text)
+                            }
+                        }
+                        .onAppear { model.requestAppIcon(app.open) }  // icons arrive as rows show
                     }
                     .searchable(text: $search, prompt: "Search the laptop's apps")
                 } else {

@@ -24,6 +24,8 @@ struct Shortcut: Codable, Identifiable, Equatable {
     var open: String?    // an app (shell:AppsFolder\...), file, folder or website
     var run: String?     // a command
     var lock: Bool?
+    /// The app's own icon (base64 PNG, from the laptop); "" = show the symbol instead.
+    var image: String?
 
     /// For the laptop (save_shortcuts / try_shortcut).
     var json: [String: Any] {
@@ -116,6 +118,7 @@ struct LaptopMessage: Decodable {
     let laptopName: String?
     let laptopInput: Bool?
     let on: Bool?  // laptop_input
+    let open: String?  // app_icon: which app (its png is in `png`)
     let apps: [LaptopApp]?
     let stats: LaptopStats?
     let nowPlaying: NowPlaying?

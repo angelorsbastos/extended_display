@@ -132,6 +132,36 @@ struct SliderTile: View {
     }
 }
 
+/// A shortcut's picture: the app's own icon from the laptop when it has one,
+/// otherwise its symbol. `size` is the symbol's point size; icons are a bit larger.
+struct ShortcutIcon: View {
+    let shortcut: Shortcut
+    let size: CGFloat
+
+    var body: some View {
+        if let icon = Self.image(shortcut.image) {
+            Image(uiImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size * 1.45, height: size * 1.45)
+        } else {
+            Image(systemName: shortcut.icon)
+                .font(.system(size: size, weight: .semibold))
+        }
+    }
+
+    private static var decoded: [String: UIImage] = [:]  // base64 -> picture, so it's decoded once
+
+    static func image(_ base64: String?) -> UIImage? {
+        guard let base64, !base64.isEmpty else { return nil }
+        if let known = decoded[base64] { return known }
+        guard let data = Data(base64Encoded: base64), let picture = UIImage(data: data) else { return nil }
+        decoded[base64] = picture
+        return picture
+    }
+}
+
 /// A small rounded label in the header (connection, battery, temperature).
 struct Pill: View {
     let icon: String
