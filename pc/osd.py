@@ -26,7 +26,7 @@ ICONS = {
     "bluetooth": "", "mic": "", "mic_off": "", "dark": "",
     "awake": "", "plan": "", "lock": "", "play": "", "pause": "",
     "next": "", "previous": "", "shortcut": "", "file": "",
-    "paste": "", "speaker": "", "tablet": "", "power": "",
+    "paste": "", "speaker": "", "tablet": "", "power": "", "timer": "",
 }
 GRAPHITE, WHITE, MUTED, TRACK = "#1e1f24", "#f3f3f5", "#9a9ca5", "#3a3c44"
 SHOW_SECONDS = 1.6
