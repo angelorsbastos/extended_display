@@ -99,6 +99,7 @@ final class AppModel: ObservableObject {
             self?.requestKeyframe()
         }
         audio.onProblem = { [weak self] text in self?.log(text) }
+        dockTimer.onFinish = { [weak self] in self?.server.send(json: ["type": "timer_done"]) }
         files.attach(server)
         server.onFileData = { [weak self] payload in self?.files.receive(payload) }
 

@@ -25,6 +25,7 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     try_shortcut {shortcut} (run one without saving), list_apps,
                     watch_stats {on} (the Dashboard is open: send stats every 2 s),
                     laptop_input {on} (switch Ctrl+Alt+I from the device),
+                    timer_done (the Dock's timer ran out: indicator and sound here),
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
     laptop -> iPad: hello {shortcuts, laptop_name, laptop_input} (also after save_shortcuts),
                     laptop_input {on} (Ctrl+Alt+I switched), apps {apps: [{name, open}]},
@@ -44,6 +45,7 @@ import subprocess
 import threading
 import time
 import traceback
+import winsound
 
 import numpy as np
 from av.video.frame import PictureType
@@ -582,6 +584,9 @@ def handle(session):
                 stats_watch.watch(bool(msg.get("on")))
             elif kind == "laptop_input":
                 ipad_control.request(bool(msg.get("on")))
+            elif kind == "timer_done":  # the Dock's timer ran out: say so here too
+                osd.show("timer", f"Time's up on the {session.name}")
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)  # Windows' own soft sound
             elif kind == "sound":
                 set_sound(bool(msg.get("on")))
             elif kind == "control":

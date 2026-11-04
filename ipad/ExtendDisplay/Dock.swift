@@ -1,6 +1,7 @@
-import AudioToolbox
+import AVFoundation
 import Combine
 import SwiftUI
+import UserNotifications
 
 /// The Dock: for an iPad or iPhone standing next to the laptop, mostly on its
 /// side. At rest: a huge clock with the date and a running timer, the song
@@ -70,26 +71,30 @@ struct DockView: View {
     @ViewBuilder
     private func resting(_ date: Date, size: CGSize, night: Bool) -> some View {
         if size.width > size.height {
-            // on its side (the usual): clock on the left, music and shortcuts on the right
-            HStack(alignment: .center, spacing: size.width * 0.05) {
-                clock(date, height: size.height * (isPhone ? 0.44 : 0.34), night: night)
+            // on its side (the usual): the clock on the left; on the right the song at
+            // the top and the shortcuts at the bottom, the column as tall as the clock
+            // block so the two sides line up, and the grid filling the column
+            let column = size.width * (isPhone ? 0.36 : 0.34)
+            let block = size.height * (isPhone ? 0.78 : 0.62)
+            HStack(alignment: .center, spacing: size.width * 0.06) {
+                clock(date, height: size.height * (isPhone ? 0.42 : 0.32), night: night)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: size.height * 0.08) {
+                VStack(alignment: .leading, spacing: 0) {
                     song(night: night)
-                    shortcutGrid(columns: 3, night: night)
+                    Spacer(minLength: size.height * 0.05)
+                    shortcutGrid(columns: 3, width: column, night: night)
                 }
-                .frame(width: size.width * (isPhone ? 0.34 : 0.32), alignment: .leading)
+                .frame(width: column, height: block, alignment: .topLeading)
             }
             .padding(.horizontal, size.width * 0.06)
-            .padding(.vertical, size.height * 0.08)
         } else {
-            // upright: clock on top, music under it, shortcuts at the bottom
-            VStack(alignment: .leading, spacing: size.height * 0.05) {
+            // upright: clock and song in the upper part, shortcuts across the bottom
+            VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
                 clock(date, height: size.width * 0.3, night: night)
-                song(night: night)
-                Spacer(minLength: 0)
-                shortcutGrid(columns: isPhone ? 3 : 6, night: night)
+                song(night: night).padding(.top, size.height * 0.05)
+                Spacer(minLength: size.height * 0.06)
+                shortcutGrid(columns: isPhone ? 3 : 6, width: size.width * 0.84, night: night)
             }
             .padding(.horizontal, size.width * 0.08)
             .padding(.vertical, size.height * 0.07)
@@ -141,10 +146,13 @@ struct DockView: View {
     }
 
     /// The six chosen shortcuts, quiet, one tap each.
-    private func shortcutGrid(columns: Int, night: Bool) -> some View {
-        let side: CGFloat = isPhone ? 50 : 68
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: isPhone ? 12 : 16), count: columns),
-                         alignment: .leading, spacing: isPhone ? 12 : 16) {
+    /// Spread over the width it's given: tiles grow with the room, gaps with them.
+    private func shortcutGrid(columns: Int, width: CGFloat, night: Bool) -> some View {
+        let gap = width * (columns > 3 ? 0.04 : 0.08)
+        let side = min((width - gap * CGFloat(columns - 1)) / CGFloat(columns), isPhone ? 84 : 110)
+        let spread = (width - side * CGFloat(columns)) / CGFloat(max(columns - 1, 1))
+        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: spread), count: columns),
+                         alignment: .leading, spacing: min(spread, side * 0.4)) {
             ForEach(chosenShortcuts) { shortcut in
                 Button {
                     model.tap()
@@ -482,11 +490,18 @@ final class DockTimer: ObservableObject {
             : String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
+    /// Called when a timer runs out while Wingman is open (the app tells the laptop).
+    var onFinish: (() -> Void)?
+    private var alarm: AVAudioPlayer?
+    private static let notificationId = "wingman.timer"
+
     func start(seconds: TimeInterval) {
         total = max(seconds, 1)
         end = Date().addingTimeInterval(total)
         pausedRemaining = nil
         finished = false
+        stopAlarm()
+        scheduleNotification()
         watch()
     }
 
@@ -494,11 +509,13 @@ final class DockTimer: ObservableObject {
         if let pausedRemaining {
             end = Date().addingTimeInterval(pausedRemaining)
             self.pausedRemaining = nil
+            scheduleNotification()
             watch()
         } else if end != nil {
             pausedRemaining = remaining
             end = nil
             ticker = nil
+            cancelNotification()
         }
     }
 
@@ -507,17 +524,90 @@ final class DockTimer: ObservableObject {
         pausedRemaining = nil
         finished = false
         ticker = nil
+        stopAlarm()
+        cancelNotification()
     }
 
     private func watch() {
         ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect().sink { [weak self] _ in
             guard let self, let end = self.end, end.timeIntervalSinceNow <= 0 else { return }
+            let late = -end.timeIntervalSinceNow
             self.end = nil
             self.ticker = nil
             self.finished = true
-            AudioServicesPlaySystemSound(1005)  // a short chime
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // back in the app long after the end: the notification already rang
+            if late < 5 {
+                self.ringAlarm()
+                self.onFinish?()
+            }
         }
+    }
+
+    // MARK: the alarm: a soft chime, again and again until stopped
+
+    private func ringAlarm() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        let session = AVAudioSession.sharedInstance()
+        // playback: the iPhone's silent switch doesn't mute it, like the Clock app's timer
+        try? session.setCategory(.playback, options: [.duckOthers])
+        try? session.setActive(true)
+        alarm = try? AVAudioPlayer(data: Self.chime())
+        alarm?.numberOfLoops = -1
+        alarm?.volume = 0.8
+        alarm?.play()
+    }
+
+    private func stopAlarm() {
+        guard alarm != nil else { return }
+        alarm?.stop()
+        alarm = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// Two soft bell tones and a pause, as a WAV made right here (no sound file needed).
+    private static func chime() -> Data {
+        let rate = 44_100
+        var samples = [Int16]()
+        for (start, frequency) in [(0.0, 880.0), (0.28, 1318.5)] {
+            let offset = Int(start * Double(rate))
+            for i in 0..<Int(1.2 * Double(rate)) {
+                let t = Double(i) / Double(rate)
+                let bell = sin(2 * .pi * frequency * t) + 0.3 * sin(2 * .pi * frequency * 2 * t)
+                let value = bell * exp(-3.2 * t) * 0.32 * Double(Int16.max)
+                let index = offset + i
+                if index >= samples.count { samples.append(0) }
+                samples[index] = Int16(clamping: Int(samples[index]) + Int(value))
+            }
+        }
+        samples += Array(repeating: 0, count: rate * 3 / 4)  // the pause before it rings again
+        var data = Data()
+        func put<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        data.append(contentsOf: Array("RIFF".utf8)); put(UInt32(36 + samples.count * 2))
+        data.append(contentsOf: Array("WAVEfmt ".utf8)); put(UInt32(16)); put(UInt16(1)); put(UInt16(1))
+        put(UInt32(rate)); put(UInt32(rate * 2)); put(UInt16(2)); put(UInt16(16))
+        data.append(contentsOf: Array("data".utf8)); put(UInt32(samples.count * 2))
+        samples.forEach { put($0) }
+        return data
+    }
+
+    // MARK: a notification, for when Wingman is closed or the screen is locked
+
+    private func scheduleNotification() {
+        let center = UNUserNotificationCenter.current()
+        let seconds = remaining
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted, seconds > 1 else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Time's up"
+            content.body = "Your Wingman timer has finished."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+            center.add(UNNotificationRequest(identifier: Self.notificationId, content: content, trigger: trigger))
+        }
+    }
+
+    private func cancelNotification() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.notificationId])
     }
 }
 
