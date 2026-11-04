@@ -21,9 +21,11 @@ concurrency:
 
 jobs:
   build:
-    # Intel Macs: the free Apple-silicon ones are often too busy to start a job
-    # ("not acquired by Runner"). Either kind builds the same iPad app.
-    runs-on: macos-15-intel
+    # Apple-silicon Macs. When GitHub has no Mac of a kind free, the job fails
+    # with "not acquired by Runner" without building: then switch to the other
+    # kind (macos-15 <-> macos-15-intel; Intel is being retired, so it's scarce).
+    # Either kind builds the same iPad app.
+    runs-on: macos-15
     defaults:
       run:
         working-directory: ipad
