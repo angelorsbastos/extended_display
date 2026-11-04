@@ -23,7 +23,6 @@ struct DockView: View {
     @AppStorage("dock.nightOverride") private var nightOverride = -1  // -1 none, 0 day, 1 night
     @AppStorage("dock.nightOverrideUntil") private var nightOverrideUntil = 0.0
 
-    static let controlsSeconds = 6.0
     static let nightRed = Color(red: 0.78, green: 0.2, blue: 0.18)
     static let nightDim = Color(red: 0.43, green: 0.12, blue: 0.11)
 
@@ -336,7 +335,7 @@ struct DockView: View {
         hideControls?.cancel()
         let hide = DispatchWorkItem { showingControls = false }
         hideControls = hide
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.controlsSeconds, execute: hide)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Prefs.dockFadeSeconds, execute: hide)
     }
 
     private var chosenList: [String] {
@@ -347,21 +346,22 @@ struct DockView: View {
         chosenList.compactMap { id in model.shortcuts.first { $0.id == id } }
     }
 
-    /// Night from 22:00 to 7:00, unless switched by hand since the last change.
+    /// Night between the hours set in Settings (22:00 to 7:00 at first), unless switched by hand since the last change.
     private func isNight(_ date: Date) -> Bool {
         if nightOverride >= 0, date.timeIntervalSince1970 < nightOverrideUntil {
             return nightOverride == 1
         }
         let hour = Calendar.current.component(.hour, from: date)
-        return hour >= 22 || hour < 7
+        let start = Prefs.nightStartHour, end = Prefs.nightEndHour
+        return start > end ? (hour >= start || hour < end) : (hour >= start && hour < end)
     }
 
-    /// Switch now; it holds until the next automatic change (22:00 or 7:00).
+    /// Switch now; it holds until the next automatic change.
     private func switchNight() {
         let now = Date()
         nightOverride = isNight(now) ? 0 : 1
         let calendar = Calendar.current
-        let next = [22, 7].compactMap {
+        let next = [Prefs.nightStartHour, Prefs.nightEndHour].compactMap {
             calendar.nextDate(after: now, matching: DateComponents(hour: $0, minute: 0), matchingPolicy: .nextTime)
         }.min() ?? now.addingTimeInterval(12 * 3600)
         nightOverrideUntil = next.timeIntervalSince1970

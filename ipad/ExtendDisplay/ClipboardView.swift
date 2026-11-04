@@ -27,8 +27,8 @@ struct QuickPanel: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 12) {
                     Picker("Panel", selection: $model.panelTab) {
-                        Text("Controls").tag(AppModel.PanelTab.controls)
                         Text("Shortcuts").tag(AppModel.PanelTab.shortcuts)
+                        Text("Controls").tag(AppModel.PanelTab.controls)
                         Text("Clipboard").tag(AppModel.PanelTab.clipboard)
                     }
                     .pickerStyle(.segmented)

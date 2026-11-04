@@ -14,7 +14,8 @@ enum Screen: Equatable {
     case files
     case dashboard
     case trackpad  // iPhone
-    case dock      // iPhone
+    case dock
+    case settings
 }
 
 /// iPhone or iPad: the iPhone has its own home screen and modes.
@@ -123,6 +124,7 @@ final class AppModel: ObservableObject {
                     self.server.send(json: ["type": "watch_stats", "on": true])
                 }
                 self.updateControlsWatch()
+                self.sendPrefs()
                 if !self.sharedWhileAway.isEmpty {
                     self.files.send(self.sharedWhileAway)
                     self.sharedWhileAway.removeAll()
@@ -227,9 +229,20 @@ final class AppModel: ObservableObject {
         server.send(json: ["type": "watch_controls", "on": watching])
     }
 
-    /// A light tap felt in the hand, for buttons and tiles.
+    /// A light tap felt in the hand, for buttons and tiles (unless switched off).
     func tap() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        haptic()
+    }
+
+    /// The connection setting changed: refuse ways it no longer allows (a
+    /// connection that came that way is dropped; the laptop then tries others).
+    func applyConnectionPrefs() {
+        server.dropDisallowed()
+    }
+
+    /// Settings the laptop uses: the Extend screen's text size and picture quality.
+    func sendPrefs() {
+        server.send(json: ["type": "prefs", "extend_scale": Prefs.extendScaleValue, "quality": Prefs.qualityValue])
     }
 
     /// Ctrl+Alt+I from here: the laptop's keyboard and trackpad go to the iPad.
@@ -304,6 +317,13 @@ final class AppModel: ObservableObject {
             audio.stop()
         }
         server.send(json: ["type": "sound", "on": on])
+    }
+
+    /// Settings changed a sound preference: follow it now if it's for this connection.
+    func applySoundPrefs() {
+        guard let transport else { return }
+        let wanted = Self.soundSetting(for: transport)
+        if wanted != soundOnIPad { setSoundOnIPad(wanted) }
     }
 
     private static func soundKey(for transport: Transport) -> String {

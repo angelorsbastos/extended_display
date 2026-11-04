@@ -26,6 +26,7 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     app_icon {open} (-> app_icon {open, png}: base64, "" if none),
                     watch_stats {on} (the Dashboard is open: send stats every 2 s),
                     laptop_input {on} (switch Ctrl+Alt+I from the device),
+                    prefs {extend_scale: 175/200/225, quality: smooth/balanced/sharp},
                     timer_done (the Dock's timer ran out: indicator and sound here),
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
     laptop -> iPad: hello {shortcuts, laptop_name, laptop_input} (also after save_shortcuts),
@@ -86,6 +87,9 @@ IPAD_SIZE = (2360, 1640)  # iPad 10 screen; offered once ipad-resolution.reg is 
 # Windows scale for the Extend screen. 200% shows things at the size iPadOS itself
 # uses; try 175 for more room or 225 for bigger text.
 EXTEND_SCALE = 200
+# the device's Settings can change both: Extend text size (scale) and picture quality
+EXTEND_SCALES = (175, 200, 225)
+QUALITY = {"smooth": 0.6, "balanced": 1, "sharp": 1.6}  # times BIT_RATE
 
 
 class Session:
@@ -100,6 +104,7 @@ class Session:
         self.address = None  # Tailscale address, for remote ones
         self.name = "the iPad"  # set from the device's identity
         self.device = "ipad"    # or "iphone"
+        self.prefs = {}         # the device's Settings that matter here (prefs message)
         self.ready = False
         self.cipher = None
         self.send_lock = threading.Lock()
@@ -185,7 +190,8 @@ class VideoStream:
             if self.codec is None:
                 # a fresh encoder per stream, so the iPad's first frame is a keyframe
                 self.codec = make_encoder(frame.width, frame.height,
-                                          bit_rate=BIT_RATE[self.session.transport])
+                                          bit_rate=int(BIT_RATE[self.session.transport]
+                                                       * QUALITY.get(self.session.prefs.get("quality"), 1)))
                 self.vf, self.view = make_frame(frame.width, frame.height)
             np.copyto(self.view, frame.frame_buffer)
             sent = self._encode(PictureType.NONE)
@@ -381,7 +387,7 @@ def touchscreen():
     return _touchscreen
 
 
-def create_extend_screen(displays, portrait=False):
+def create_extend_screen(displays, portrait=False, scale=EXTEND_SCALE):
     """Plug in a new virtual screen, sized for the iPad, where the user put it last
     time in this setup (or right of the others the first time).
     Returns (driver index, screen name, setup key)."""
@@ -410,7 +416,7 @@ def create_extend_screen(displays, portrait=False):
         position = (right, 0)
     monitors.configure(new["name"], width, height, *position, portrait=portrait)
     # at 100% a 2360x1640 screen on 10.9" makes everything tiny
-    monitors.set_scale(new["name"], EXTEND_SCALE)
+    monitors.set_scale(new["name"], scale)
     return index, new["name"], setup
 
 
@@ -509,7 +515,9 @@ def handle(session):
         nonlocal displays, extend_index, extend_name, extend_setup
         if mode == "extend":
             displays = displays or vdd.VirtualDisplays()
-            extend_index, extend_name, extend_setup = create_extend_screen(displays, portrait)
+            scale = session.prefs.get("extend_scale")
+            extend_index, extend_name, extend_setup = create_extend_screen(
+                displays, portrait, scale if scale in EXTEND_SCALES else EXTEND_SCALE)
             capture(extend_name)
         else:
             capture(monitors.primary_monitor()["name"])
@@ -586,6 +594,8 @@ def handle(session):
                 stats_watch.watch(bool(msg.get("on")))
             elif kind == "laptop_input":
                 ipad_control.request(bool(msg.get("on")))
+            elif kind == "prefs":  # used from the next Extend / Mirror on
+                session.prefs = {k: msg.get(k) for k in ("extend_scale", "quality")}
             elif kind == "timer_done":  # the Dock's timer ran out: say so here too
                 osd.show("timer", f"Time's up on the {session.name}")
                 winsound.MessageBeep(winsound.MB_ICONASTERISK)  # Windows' own soft sound
@@ -698,6 +708,13 @@ class AlreadyConnected(Exception):
     """This device is already connected another way (e.g. Wi-Fi and Tailscale)."""
 
 
+class Refused(AlreadyConnected):
+    """The device's settings turn this way of connecting off (e.g. "Wireless only")."""
+
+
+REFUSED_RETRY = 10  # seconds before trying a way the device refused again
+
+
 class Devices:
     """Which iPads / iPhones are connected, so several can be served at once but
     each only once. A device is "claimed" by the session that serves it: a
@@ -738,7 +755,7 @@ def find_devices(devices, busy, on_status, browser):
         problems.append("Apple's USB service isn't running (install Apple Devices or iTunes).")
     for device in cabled:
         key = f"usb {device['DeviceID']}"
-        if key in busy:
+        if key in busy or devices.paused_until.get(key, 0) > time.time():
             continue
         try:
             session = Session(usbmux.connect(device["DeviceID"], PORT), "usb")
@@ -751,7 +768,7 @@ def find_devices(devices, busy, on_status, browser):
     # explain the Wi-Fi side as precisely as possible: the user can't see it otherwise
     for ipad in browser.ipads() if browser else []:
         key = f"wifi {ipad['id']}"
-        if key in busy or devices.claimed(ipad["id"]):
+        if key in busy or devices.claimed(ipad["id"]) or devices.paused_until.get(key, 0) > time.time():
             continue
         unpaired = secure.key_for(ipad["id"]) is None
         wait = devices.paused_until.get(ipad["id"], 0) - time.time()
@@ -834,6 +851,9 @@ def set_up_link(session, on_status, devices):
         session.device = identity.get("device", "ipad")  # apps before the iPhone version: iPads
         if getattr(session, "address", None):
             devices.remote_ids[session.address] = ipad_id
+        if identity.get("refused"):
+            devices.paused_until[session.key] = time.time() + REFUSED_RETRY
+            raise Refused(name)
         if not devices.claim(ipad_id, session):
             raise AlreadyConnected(name)
         knows_us = secure.laptop_id() in identity.get("paired_laptops", [])

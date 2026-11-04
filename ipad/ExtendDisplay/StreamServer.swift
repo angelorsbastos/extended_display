@@ -86,6 +86,14 @@ final class StreamServer {
         }
     }
 
+    /// The connection setting changed: hang up a link it no longer allows.
+    func dropDisallowed() {
+        queue.async { [weak self] in
+            guard let self, let link = self.active, !Prefs.allows(link.transport) else { return }
+            self.close(link)
+        }
+    }
+
     /// The user typed the code shown on the laptop.
     func submitPairingCode(_ typed: String) {
         queue.async { [weak self] in
@@ -171,9 +179,18 @@ final class StreamServer {
         let viaTailscale = transport == .wifi && Self.isTailscale(connection.endpoint)
         let link = Link(connection, viaTailscale ? .remote : transport)
         connection.start(queue: queue)
-        sendJSON(["type": "identity", "ipad_id": PairingStore.ipadId, "ipad_name": deviceName,
-                  "device": UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad",
-                  "paired_laptops": PairingStore.laptopIds], on: link)
+        var identity: [String: Any] = [
+            "type": "identity", "ipad_id": PairingStore.ipadId, "ipad_name": deviceName,
+            "device": UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad",
+            "paired_laptops": PairingStore.laptopIds]
+        // Settings turned this way of connecting off: say so (the laptop waits a
+        // while before trying it again) and hang up
+        guard Prefs.allows(link.transport) else {
+            identity["refused"] = true
+            sendJSON(identity, on: link) { connection.cancel() }
+            return
+        }
+        sendJSON(identity, on: link)
         if link.ready {
             activate(link)
         }

@@ -95,8 +95,6 @@ struct TouchpadSurfaceView: UIViewRepresentable {
 }
 
 final class TouchpadSurface: UIView {
-    /// Phone points -> laptop pointer movement (Windows adds its own acceleration).
-    static let pointerSpeed: CGFloat = 2.2
     /// Points of two-finger movement per mouse-wheel notch.
     static let scrollPoints: CGFloat = 30
     static let tapTime: TimeInterval = 0.25
@@ -145,10 +143,13 @@ final class TouchpadSurface: UIView {
         if travelled > Self.tapSlop { holdTimer?.invalidate() }
         switch down.count {
         case 1:
-            send?(["type": "mouse_move", "dx": Double(dx * Self.pointerSpeed), "dy": Double(dy * Self.pointerSpeed)])
+            // phone points -> laptop pointer movement (Windows adds its own acceleration)
+            let speed = CGFloat(Prefs.pointerSpeedValue)
+            send?(["type": "mouse_move", "dx": Double(dx * speed), "dy": Double(dy * speed)])
         case 2:
-            // content follows the fingers, like on the phone itself
-            send?(["type": "scroll", "dx": Double(-dx / Self.scrollPoints), "dy": Double(dy / Self.scrollPoints)])
+            // natural: content follows the fingers, like on the phone itself
+            let scale = CGFloat(Prefs.scrollSpeedValue) / Self.scrollPoints * (Prefs.naturalScrollValue ? 1 : -1)
+            send?(["type": "scroll", "dx": Double(-dx * scale), "dy": Double(dy * scale)])
         default:
             break
         }
@@ -182,7 +183,7 @@ final class TouchpadSurface: UIView {
     private func startDragIfHeld() {
         guard down.count == 1, travelled < Self.tapSlop else { return }
         dragging = true
-        haptic.impactOccurred()
+        if Prefs.hapticsOn { haptic.impactOccurred() }
         send?(["type": "mouse_button", "button": "left", "down": true])
     }
 
