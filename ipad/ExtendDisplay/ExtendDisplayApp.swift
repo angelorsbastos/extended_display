@@ -113,6 +113,8 @@ struct RootView: View {
                     ClipboardScreen(model: model)
                 case .files:
                     FilesView(model: model, files: model.files)
+                case .dashboard:
+                    DashboardView(model: model)
                 }
                 FileNoteBanner(files: model.files)
                 if let laptop = model.pairingLaptop {

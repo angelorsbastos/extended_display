@@ -73,11 +73,47 @@ struct ControlsState: Decodable, Equatable {
     var powerPlan: String?
 }
 
+/// The Dashboard's numbers (pc/stats.py read()). nil = the laptop couldn't read it.
+struct LaptopStats: Decodable, Equatable {
+    struct CPU: Decodable, Equatable {
+        let temp: Double?    // °C
+        let usage: Double?   // %
+        let fan: Int?        // RPM
+    }
+    struct GPU: Decodable, Equatable {
+        let name: String?
+        let temp: Double?
+        let usage: Double?
+        let power: Double?   // W
+        let clock: Double?   // MHz
+        let memoryUsed: Double?   // MiB
+        let memoryTotal: Double?
+        let fan: Int?
+    }
+    struct Memory: Decodable, Equatable {
+        let used: Double?    // GiB
+        let total: Double?
+    }
+    struct BatteryInfo: Decodable, Equatable {
+        let percent: Int?
+        let pluggedIn: Bool?
+        let health: Int?     // % of the capacity it had when new
+        let designWh: Double?
+        let fullWh: Double?
+    }
+    let cpu: CPU
+    let gpu: GPU
+    let memory: Memory
+    let battery: BatteryInfo?
+    let powerPlan: String?
+}
+
 /// Any JSON message from the laptop; which fields are set depends on `type`.
 struct LaptopMessage: Decodable {
     let type: String
     let shortcuts: [Shortcut]?
     let apps: [LaptopApp]?
+    let stats: LaptopStats?
     let nowPlaying: NowPlaying?
     let controls: ControlsState?
     let width: Int?

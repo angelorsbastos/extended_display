@@ -12,6 +12,7 @@ enum Screen: Equatable {
     case controls
     case clipboard
     case files
+    case dashboard
 }
 
 /// App state, shared by all screens. Published properties change on the main thread only.
@@ -31,6 +32,10 @@ final class AppModel: ObservableObject {
     @Published var shortcuts: [Shortcut] = []
     /// The laptop's Start menu apps, for the shortcut editor (asked for with requestApps).
     @Published var laptopApps: [LaptopApp]?
+    /// The Dashboard's latest numbers, and the last few minutes of them for the graphs.
+    @Published var stats: LaptopStats?
+    @Published var statsHistory: [LaptopStats] = []
+    static let statsHistoryLength = 90  // samples, every 2 s: 3 minutes
     @Published var nowPlaying: NowPlaying?
     /// Changed by the laptop's updates, and right away by the Controls screen
     /// (so a switch flips instantly instead of after the next update).
@@ -97,6 +102,9 @@ final class AppModel: ObservableObject {
                 self.soundOnIPad = Self.soundSetting(for: transport)
                 if self.soundOnIPad {
                     self.server.send(json: ["type": "sound", "on": true])
+                }
+                if self.screen == .dashboard {  // reconnected while it's open
+                    self.server.send(json: ["type": "watch_stats", "on": true])
                 }
                 if !self.sharedWhileAway.isEmpty {
                     self.files.send(self.sharedWhileAway)
@@ -166,6 +174,10 @@ final class AppModel: ObservableObject {
             // the laptop sends its settings every 2 s while this screen is open
             server.send(json: ["type": "watch_controls", "on": true])
         }
+        if screen == .dashboard {
+            // the laptop reads its sensors only while this screen is open
+            server.send(json: ["type": "watch_stats", "on": true])
+        }
         if case .video(let mode) = screen {
             receivingVideo = false
             videoError = nil
@@ -178,6 +190,9 @@ final class AppModel: ObservableObject {
     func goHome() {
         if screen == .controls {
             server.send(json: ["type": "watch_controls", "on": false])
+        }
+        if screen == .dashboard {
+            server.send(json: ["type": "watch_stats", "on": false])
         }
         if case .video = screen {
             server.send(json: ["type": "stop_video"])
@@ -367,6 +382,11 @@ final class AppModel: ObservableObject {
                 self.shortcuts = message.shortcuts ?? []
             case "apps":
                 self.laptopApps = message.apps ?? []
+            case "stats":
+                if let stats = message.stats {
+                    self.stats = stats
+                    self.statsHistory = Array((self.statsHistory + [stats]).suffix(Self.statsHistoryLength))
+                }
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
             case "controls":

@@ -4,7 +4,8 @@ import UIKit
 struct HomeView: View {
     @ObservedObject var model: AppModel
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 24), count: 3)
+    // 4 across in landscape, 3 in portrait: seven cards still fit above the connection panel
+    private let columns = [GridItem(.adaptive(minimum: 230), spacing: 24)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
@@ -28,6 +29,8 @@ struct HomeView: View {
                              icon: "square.grid.3x3.fill", tint: .orange) { model.open(.shortcuts) }
                     ModeCard(title: "Controls", subtitle: "Music, sound, screen, Wi-Fi, power",
                              icon: "slider.horizontal.3", tint: .green) { model.open(.controls) }
+                    ModeCard(title: "Dashboard", subtitle: "Temperatures, fans, usage, battery health",
+                             icon: "gauge.with.dots.needle.67percent", tint: .red) { model.open(.dashboard) }
                 }
                 .disabled(!model.connected)
                 .opacity(model.connected ? 1 : 0.4)
@@ -165,8 +168,8 @@ struct ModeCard: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            .padding(28)
-            .frame(maxWidth: .infinity, minHeight: 220, alignment: .leading)
+            .padding(24)
+            .frame(maxWidth: .infinity, minHeight: 190, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 28).fill(Color.white.opacity(0.08)))
         }
         .buttonStyle(PressableStyle())
