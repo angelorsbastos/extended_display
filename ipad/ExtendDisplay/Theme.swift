@@ -42,7 +42,7 @@ struct Tile<Content: View>: View {
             .contentShape(shape)
         if let action {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                haptic()
                 action()
             } label: { label }
                 .buttonStyle(PressableStyle())
@@ -118,7 +118,7 @@ struct SliderTile: View {
                 .onEnded { _ in
                     dragging = false
                     onChange(Int(level * 100))
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    haptic()
                 })
         }
         .disabled(value == nil)

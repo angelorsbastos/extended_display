@@ -7,6 +7,7 @@ import UIKit
 struct VideoScreen: View {
     @ObservedObject var model: AppModel
     @State private var showHint = false
+    @AppStorage(Prefs.quickButton) private var showQuickButton = true
 
     var body: some View {
         ZStack {
@@ -40,7 +41,7 @@ struct VideoScreen: View {
                 .allowsHitTesting(false)
             }
 
-            if model.receivingVideo && !model.showingClipboard {
+            if model.receivingVideo && !model.showingClipboard && showQuickButton {
                 QuickButton(model: model)
             }
 
@@ -111,7 +112,7 @@ struct QuickButton: View {
                         let moved = hypot(drag.translation.width, drag.translation.height)
                         if moved < 6 {  // a tap
                             dragging = .zero
-                            model.panelTab = .controls
+                            model.panelTab = .shortcuts
                             model.tap()
                             withAnimation { model.showingClipboard = true }
                             return

@@ -59,6 +59,7 @@ struct ControlCenterView: View {
                     .foregroundStyle(model.connected ? Theme.secondary : Theme.warm)
             }
             Spacer(minLength: 8)
+            Pill(icon: "gearshape.fill", text: nil) { model.open(.settings) }
             Pill(icon: connectionIcon, text: isPhone ? nil : connectionWord,
                  tint: model.connected ? Theme.good : Theme.warm) { showingConnection = true }
             if model.connected {
