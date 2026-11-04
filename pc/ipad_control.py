@@ -9,8 +9,10 @@ characters, like a real keyboard.
 
 The touchpad goes to the iPad as a real multi-touch trackpad: touchpad.py
 reads the raw fingers and bluetooth_hid.py forwards them, so the pointer,
-scrolling and gestures are the iPad's own. The mouse hook then only keeps the
-laptop's pointer still. Without a precision touchpad, pointer movement, clicks
+scrolling and gestures are the iPad's own. The mouse hook keeps the laptop's
+pointer still, and a plugged-in mouse is played as fingers too
+(mouse_fingers.py). The hook can't tell the two apart, so mouse input while
+(or just after) fingers are on the touchpad counts as the touchpad's. Without a precision touchpad, pointer movement, clicks
 and the wheel are sent as a mouse instead (the pointer waits mid-screen and
 its movements are forwarded).
 
@@ -33,6 +35,7 @@ from ctypes import wintypes
 import inputs
 import osd
 import touchpad
+from mouse_fingers import MouseFingers
 from bluetooth_hid import BluetoothHID
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -84,6 +87,9 @@ ALL_GLOBAL_GESTURES = 0x3F  # TouchpadGlobalGestureKinds: 3/4/5-finger swipes an
 POINTER_SCALE = 1.0  # laptop pointer movement -> iPad pointer movement
 SCROLL_UNIT = 40     # Windows wheel units per iPad scroll step (a mouse notch is 120)
 CONNECT_TIMEOUT = 12  # seconds to wait for the iPad before giving up
+# mouse input this soon after the touchpad was touched is the touchpad's own
+# (taps click a moment after the finger lifts)
+TOUCHPAD_MOVE_GRACE, TOUCHPAD_CLICK_GRACE = 0.15, 0.6
 
 
 WM_REQUEST = WM_APP + 2  # switch on (wParam 1) / off (0) on request from a device
@@ -127,6 +133,9 @@ class Controller:
         self.previous_window = None
         self.touchpad = touchpad.Touchpad(lambda *_: None, self._on_fingers)
         self.trackpad_mode = False  # the touchpad goes to the iPad as a trackpad (else as a mouse)
+        self.touch_seen = 0.0  # when the touchpad last had fingers on it
+        self.mouse_fingers = MouseFingers(self.bluetooth.send_touch,
+                                          lambda: bool(self.touchpad.touching) or self.touchpad.clicked)
         threading.Thread(target=self._run, name="ipad-control", daemon=True).start()
 
     # ---- hotkey thread -----------------------------------------------------------
@@ -178,6 +187,8 @@ class Controller:
                       user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_proc, module, 0)]
         self.trackpad_mode = self.touchpad.problem is None
         self.bluetooth.start(trackpad=self.trackpad_mode)
+        if self.trackpad_mode:
+            self.mouse_fingers.start()
         # 3/4-finger gestures: ours instead of Windows', while our hint is in front
         self.previous_window = user32.GetForegroundWindow()
         if self.gestures:
@@ -196,6 +207,7 @@ class Controller:
         self.active = False
         self.bluetooth.send_keys(0, [])
         self.bluetooth.set_buttons(0)
+        self.mouse_fingers.stop()
         self.bluetooth.send_touch({}, False)  # lift any fingers still down
         # what's still held went to the iPad: its releases are nobody's now
         self.swallow = set(self.ipad_held)
@@ -252,6 +264,8 @@ class Controller:
 
     def _on_fingers(self, touching, clicked):
         """Every touchpad report (touchpad thread): the fingers go to the iPad."""
+        if touching or clicked:
+            self.touch_seen = time.time()
         if self.active and self.trackpad_mode:
             self.bluetooth.send_touch(touching, clicked)
 
@@ -302,7 +316,9 @@ class Controller:
         if m.flags & LLMHF_INJECTED:
             return user32.CallNextHookEx(None, code, message, data)
         if self.trackpad_mode:
-            return 1  # the fingers go to the iPad as a trackpad; just keep the pointer still
+            # the pointer stays still; a plugged-in mouse goes to the iPad as fingers
+            self._mouse_as_fingers(message, m)
+            return 1
         if message == WM_MOUSEMOVE:
             # the pointer stays at the anchor, so this is how far it would have moved
             dx, dy = m.pt.x - self.anchor[0], m.pt.y - self.anchor[1]
@@ -324,6 +340,27 @@ class Controller:
                 self.pan_rest -= steps * SCROLL_UNIT
                 self.bluetooth.move(pan=steps)
         return 1
+
+    def _mouse_as_fingers(self, message, m):
+        since_touch = time.time() - self.touch_seen
+        if message == WM_MOUSEMOVE:
+            if since_touch < TOUCHPAD_MOVE_GRACE:
+                return
+            here = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(here))
+            dx, dy = m.pt.x - here.x, m.pt.y - here.y
+            if dx or dy:
+                self.mouse_fingers.move(dx, dy)
+            return
+        if since_touch < TOUCHPAD_CLICK_GRACE:
+            return
+        if message in MOUSE_BUTTON_MESSAGES:
+            bit, down = MOUSE_BUTTON_MESSAGES[message]
+            if bit in (1, 2):
+                self.mouse_fingers.button("left" if bit == 1 else "right", down)
+        elif message in (WM_MOUSEWHEEL, WM_MOUSEHWHEEL):
+            delta = ctypes.c_short(m.mouseData >> 16).value
+            self.mouse_fingers.wheel(delta, horizontal=message == WM_MOUSEHWHEEL)
 
     # ---- Bluetooth -----------------------------------------------------------------
 
