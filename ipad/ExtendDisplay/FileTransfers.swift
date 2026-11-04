@@ -10,7 +10,7 @@ import Foundation
 /// - iPad -> laptop: one file at a time, from a copy in the temporary folder
 ///   (photos, Files, "Open in"); it lands in the laptop's Downloads.
 /// - laptop -> iPad: saved in Documents/From laptop, which the Files app shows
-///   under On My iPad > Extend Display.
+///   under On My iPad > Wingman.
 ///
 /// The transfer work happens on its own queue; published state changes on the
 /// main thread only.

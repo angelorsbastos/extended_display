@@ -1,7 +1,7 @@
-"""The laptop side of Extend Display: start once, then the iPad decides what to do.
+"""The laptop side of Wingman: start once, then the iPad decides what to do.
 
 Usage: python hub.py
-Waits for the iPad (Extend Display app open) over the USB cable or, once paired,
+Waits for the iPad (Wingman app open) over the USB cable or, once paired,
 over Wi-Fi, then handles its requests: stream a screen (extend / mirror), input,
 shortcuts from shortcuts.json, the Controls screen. The cable wins when both work.
 
@@ -613,7 +613,7 @@ def handle(session):
 class CodePopup:
     """Shows the 6-digit pairing code on the laptop, and closes it again."""
 
-    TITLE = "Extend Display pairing"
+    TITLE = "Wingman pairing"
 
     def show(self, code, ipad_name):
         print(f"pairing code for {ipad_name}: {code}")
@@ -680,7 +680,7 @@ def find_devices(devices, busy, on_status, browser):
         try:
             session = Session(usbmux.connect(device["DeviceID"], PORT), "usb")
         except usbmux.UsbmuxError:
-            problems.append("A device is plugged in: open the Extend Display app on it.")
+            problems.append("A device is plugged in: open the Wingman app on it.")
             continue
         session.key = key
         found.append(session)
@@ -700,7 +700,7 @@ def find_devices(devices, busy, on_status, browser):
         except OSError as e:
             problems.append(f"Found {ipad['name']} on Wi-Fi at {ipad['address']} but couldn't connect "
                             f"({e}). On it, check Settings > Privacy & Security > Local Network > "
-                            "Extend Display.")
+                            "Wingman.")
             continue
         network_socket(sock)
         on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
@@ -722,7 +722,7 @@ def find_devices(devices, busy, on_status, browser):
             sock = socket.create_connection((peer["address"], IPAD_WIFI_PORT), timeout=5)
         except OSError as e:
             remote_problem = f"{peer['name']} is online in Tailscale but didn't answer ({e}). " \
-                             "Is Extend Display open on it?"
+                             "Is Wingman open on it?"
             continue
         network_socket(sock)
         session = Session(sock, "remote")
@@ -731,7 +731,7 @@ def find_devices(devices, busy, on_status, browser):
 
     searching = ", ".join(browser.networks) if browser else "nothing (no network)"
     reason = problems[0] if problems else (
-        "Looking for the iPad / iPhone: plug in the cable, or open Extend Display on the same Wi-Fi "
+        "Looking for the iPad / iPhone: plug in the cable, or open Wingman on the same Wi-Fi "
         f"(searching on {searching}; guest networks usually block this)."
         + (f" Remote: {remote_problem}." if remote_problem else ""))
     return found, reason
@@ -875,7 +875,7 @@ def run(stop, on_status=print):
 
 def main():
     stop = threading.Event()
-    print("Extend Display hub. Ctrl+C to quit.")
+    print("Wingman hub. Ctrl+C to quit.")
     try:
         run(stop)
     except KeyboardInterrupt:

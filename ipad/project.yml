@@ -22,7 +22,7 @@ targets:
     info:
       path: ExtendDisplay/Info.plist
       properties:
-        CFBundleDisplayName: Extend Display
+        CFBundleDisplayName: Wingman
         # XcodeGen writes literal 1.0 / 1 unless told to use the build settings
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
@@ -38,7 +38,7 @@ targets:
           - UIInterfaceOrientationLandscapeRight
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown
-        NSLocalNetworkUsageDescription: Connects to Extend Display on your laptop over Wi-Fi.
+        NSLocalNetworkUsageDescription: Connects to Wingman on your laptop over Wi-Fi.
         # announced so the laptop can find the iPad on the Wi-Fi (like AirPlay)
         NSBonjourServices:
           - _extenddisplay._tcp
@@ -48,10 +48,10 @@ targets:
         # lock the pointer (SwiftUI's own window can't)
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        # files from the laptop show in the Files app (On My iPad > Extend Display)
+        # files from the laptop show in the Files app (On My iPad > Wingman)
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
-        # any file can be shared to the app (Share > Extend Display) to send it to the laptop
+        # any file can be shared to the app (Share > Wingman) to send it to the laptop
         CFBundleDocumentTypes:
           - CFBundleTypeName: Any file
             LSHandlerRank: Alternate

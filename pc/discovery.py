@@ -1,4 +1,4 @@
-"""Find iPads running Extend Display on the Wi-Fi, through Bonjour (like AirPlay).
+"""Find iPads running Wingman on the Wi-Fi, through Bonjour (like AirPlay).
 
 The iPad announces "_extenddisplay._tcp" with its id and name; this keeps a live
 list of the ones currently on the network.

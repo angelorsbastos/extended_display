@@ -1,6 +1,6 @@
 """Run the hub in the background with a tray icon (no terminal window).
 
-This is what the "Extend Display" desktop / Start menu shortcut starts, using
+This is what the "Wingman" desktop / Start menu shortcut starts, using
 pythonw.exe. Output goes to pc/hub.log. Quit from the tray icon's menu.
 """
 import ctypes
@@ -41,8 +41,8 @@ def already_running():
 def main():
     if already_running():
         ctypes.windll.user32.MessageBoxW(
-            None, "Extend Display is already running.\nLook for its icon next to the clock.",
-            "Extend Display", 0x40)
+            None, "Wingman is already running.\nLook for its icon next to the clock.",
+            "Wingman", 0x40)
         return
 
     stop = threading.Event()
@@ -51,7 +51,7 @@ def main():
     def on_status(text):
         print(text)
         status["text"] = text
-        icon.title = f"Extend Display: {text}"[:127]  # Windows' limit for tooltips
+        icon.title = f"Wingman: {text}"[:127]  # Windows' limit for tooltips
         icon.update_menu()
 
     def quit_hub(icon, _item):
@@ -60,7 +60,7 @@ def main():
         icon.stop()
 
     icon = pystray.Icon(
-        "ExtendDisplay", Image.open(ICON), "Extend Display",
+        "ExtendDisplay", Image.open(ICON), "Wingman",
         menu=pystray.Menu(
             pystray.MenuItem(lambda _item: status["text"], None, enabled=False),
             pystray.MenuItem("Open log", lambda: os.startfile(LOG)),

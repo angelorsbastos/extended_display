@@ -36,7 +36,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Share > Extend Display (or "Open in") from another app, while running.
+    /// Share > Wingman (or "Open in") from another app, while running.
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         model.openShared(URLContexts.map(\.url))
     }

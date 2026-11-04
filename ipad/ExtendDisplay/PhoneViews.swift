@@ -10,7 +10,7 @@ struct PhoneHomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("Extend Display")
+                    Text("Wingman")
                         .font(.largeTitle.bold())
                     Spacer()
                     ConnectionBadge(transport: model.transport)

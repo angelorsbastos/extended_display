@@ -64,7 +64,7 @@ final class AppModel: ObservableObject {
     let displayLayer = AVSampleBufferDisplayLayer()
     let clipboardHistory = ClipboardHistory()
     let files = FileTransfers()
-    /// Files other apps shared here (Share > Extend Display) before the laptop was
+    /// Files other apps shared here (Share > Wingman) before the laptop was
     /// connected: sent as soon as it is.
     private var sharedWhileAway: [URL] = []
     private let server = StreamServer()
@@ -242,7 +242,7 @@ final class AppModel: ObservableObject {
         server.send(json: ["type": "control", "name": name, "value": value])
     }
 
-    /// Another app shared files here (Share > Extend Display, or "Open in"): send
+    /// Another app shared files here (Share > Wingman, or "Open in"): send
     /// them to the laptop's Downloads, now or as soon as it connects.
     func openShared(_ urls: [URL]) {
         let copies = urls.compactMap { FileTransfers.makeSendableCopy(of: $0) }
@@ -333,7 +333,7 @@ final class AppModel: ObservableObject {
 
     /// Send what was copied on the iPad (in any app) to the laptop. Called when
     /// the app comes back to the front. iPadOS asks permission to read the
-    /// clipboard unless Settings > Extend Display > Paste from Other Apps is Allow.
+    /// clipboard unless Settings > Wingman > Paste from Other Apps is Allow.
     func sendClipboardIfChanged() {
         let pasteboard = UIPasteboard.general
         guard connected, pasteboard.changeCount != pasteboardSeen else { return }
