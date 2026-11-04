@@ -45,4 +45,4 @@ def _query():
                 # iPadOS gives every device the HostName "localhost"; the DNS name is the real one
                 name = (peer.get("DNSName") or "").split(".")[0] or "the iPad"
                 found.append({"name": name, "address": ipv4[0]})
-    return found, None if found else "the iPad isn't online in Tailscale"
+    return found, None if found else "no iPad or iPhone is online in Tailscale"
