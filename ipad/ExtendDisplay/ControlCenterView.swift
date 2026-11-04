@@ -119,9 +119,11 @@ struct ControlCenterView: View {
                 VStack(spacing: gap) {
                     nowPlayingTile.frame(width: 2 * w + gap, height: h)
                     keyboardTile.frame(width: 2 * w + gap, height: h)
-                    HStack(spacing: gap) {
-                        clipboardTile.frame(width: w, height: h)
-                        filesTile.frame(width: w, height: h)
+                    HStack(spacing: gap) {  // three small tiles in two columns' room
+                        let third = (2 * w - gap) / 3
+                        dockTile.frame(width: third, height: h)
+                        clipboardTile.frame(width: third, height: h)
+                        filesTile.frame(width: third, height: h)
                     }
                 }
                 brightnessTile.frame(width: w, height: 3 * h + 2 * gap)
@@ -209,9 +211,9 @@ struct ControlCenterView: View {
     }
 
     private var dockTile: some View {
-        needsLaptop(Tile(action: { model.open(.dock) }) {
-            TileLabel(icon: "clock", title: "Dock", detail: "Desk clock")
-        })
+        Tile(action: { model.open(.dock) }) {  // a clock and timer work without the laptop too
+            TileLabel(icon: "clock", title: "Dock", detail: "Focus clock")
+        }
     }
 
     private var soundTile: some View {
