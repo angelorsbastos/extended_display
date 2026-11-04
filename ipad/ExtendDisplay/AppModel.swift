@@ -67,6 +67,7 @@ final class AppModel: ObservableObject {
 
     let displayLayer = AVSampleBufferDisplayLayer()
     let clipboardHistory = ClipboardHistory()
+    let dockTimer = DockTimer()  // here, so a timer keeps going after leaving the Dock
     let files = FileTransfers()
     /// Files other apps shared here (Share > Wingman) before the laptop was
     /// connected: sent as soon as it is.

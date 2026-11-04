@@ -118,7 +118,7 @@ struct RootView: View {
                 case .trackpad:
                     TrackpadView(model: model)
                 case .dock:
-                    DockView(model: model)
+                    DockView(model: model, timer: model.dockTimer)
                 }
                 FileNoteBanner(files: model.files)
                 if let laptop = model.pairingLaptop {
