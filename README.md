@@ -231,6 +231,17 @@ VPN at a time. SideStore needs **LocalDevVPN**; Wingman away from home needs
 **After a big iOS update, SideStore asks for a pairing file again.** Make a new
 one with idevice_pair, as above.
 
+**Ctrl+Alt+I says it's connected, but the iPad shows no pointer and typing
+does nothing.** The iPad remembers how the laptop's keyboard and trackpad were
+laid out when they paired, and Windows sometimes lays them out differently
+later (after a restart, for example). Pair them fresh:
+1. iPad: **Settings → Bluetooth** → **(i)** next to the laptop's name →
+   **Forget This Device** (all of them, if it's listed more than once).
+2. Laptop: **Settings → Bluetooth & devices → Devices** → the iPad → **⋯ →
+   Remove device**.
+3. Press **Ctrl+Alt+I** and, on the iPad, tap the laptop's name in
+   **Settings → Bluetooth** to pair again.
+
 **Wingman doesn't connect.**
 - Is Wingman running on the laptop? Its tray icon's tooltip says what it's
   doing.

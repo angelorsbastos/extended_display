@@ -228,7 +228,9 @@ class BluetoothHID:
 
     async def _stop(self):
         if self.providers:
-            print(f"Bluetooth: {getattr(self, 'touch_frames', 0)} trackpad frames sent")
+            print(f"Bluetooth: {getattr(self, 'touch_frames', 0)} trackpad frames sent, "
+                  f"{getattr(self, 'failures', 0)} reports failed")
+            self.failures = 0
         if self.sender:
             self.sender.cancel()
             self.sender = None
@@ -378,6 +380,18 @@ class BluetoothHID:
         if characteristic is None or characteristic.subscribed_clients.size == 0:
             return
         try:
-            await characteristic.notify_value_async(_buffer(report))
-        except OSError:
-            pass  # the iPad went away; on_state reports it
+            results = await characteristic.notify_value_async(_buffer(report))
+        except OSError as e:  # the iPad went away; on_state reports it
+            self._count_failure(repr(e))
+            return
+        # a failed send doesn't raise: each receiving device has its own result
+        for result in results:
+            status = getattr(result, "status", None)
+            if status is not None and int(status) != 0:  # 0 = GattCommunicationStatus.SUCCESS
+                self._count_failure(f"status {int(status)}, protocol error {getattr(result, 'protocol_error', None)}")
+
+    def _count_failure(self, why):
+        """Diagnostics: sends the iPad didn't get, summed up when switching back."""
+        self.failures = getattr(self, "failures", 0) + 1
+        if self.failures == 1:
+            print(f"Bluetooth: a report didn't reach the iPad ({why})")
