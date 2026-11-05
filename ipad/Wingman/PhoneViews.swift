@@ -20,9 +20,26 @@ struct TrackpadView: View {
     // laptop's Ctrl, Option is Alt, and the iPad's Ctrl is the Windows key
     private static let ctrl = 227, alt = 226, win = 224, shift = 225
 
+    /// iPad: the keyboard deck (keyboard + trackpad side by side) or this key bar view.
+    @AppStorage("trackpad.deck") private var deck = true
+
     var body: some View {
+        if !isPhone && deck {
+            KeyboardDeckView(model: model, showKeyBar: { deck = false })
+        } else {
+            keyBarView
+        }
+    }
+
+    private var keyBarView: some View {
         VStack(spacing: 12) {
             TopBar(title: isPhone ? "Trackpad" : "Trackpad & keyboard", model: model)
+                .overlay(alignment: .trailing) {
+                    if !isPhone {
+                        Pill(icon: "keyboard", text: "Keyboard view") { deck = true }
+                            .padding(.trailing, 24)
+                    }
+                }
             TouchpadSurfaceView(send: model.pointer)
                 .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
                 .overlay(alignment: .bottom) {
