@@ -14,10 +14,13 @@ import UserNotifications
 struct DockView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var timer: DockTimer
+    @ObservedObject private var styles = DockStyleStore.shared
     @State private var showingControls = false
     @State private var hideControls: DispatchWorkItem?
     @State private var pickingShortcuts = false
     @State private var pickingTimer = false
+    @State private var styleNote: String?  // the style's name, briefly, after sliding to it
+    @State private var hideStyleNote: DispatchWorkItem?
     @AppStorage("dock.shortcuts") private var chosenIds = ""  // comma-separated; empty: the first six
     // a hand-picked night setting, until the next automatic switch (22:00 / 7:00)
     @AppStorage("dock.nightOverride") private var nightOverride = -1  // -1 none, 0 day, 1 night
@@ -29,29 +32,48 @@ struct DockView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let night = isNight(context.date)
+            let style = styles.current
             GeometryReader { geometry in
                 ZStack {
-                    Color.black
-                    glow(night: night, size: geometry.size)
-                    resting(context.date, size: geometry.size, night: night)
+                    DockBackground(style: style, night: night, songColour: songColour, artwork: model.artwork,
+                                   size: geometry.size)
+                        .animation(.easeInOut(duration: 2), value: model.nowPlaying?.title)
+                    DockFace(model: model, timer: timer, style: style, night: night, date: context.date,
+                             size: geometry.size, shortcuts: chosenShortcuts)
+                        .id(style.id)
+                        .transition(.opacity)
                         .offset(drift(context.date))
                         .animation(.easeInOut(duration: 8), value: Calendar.current.component(.minute, from: context.date))
                         .opacity(showingControls ? 0.25 : 1)
+                    if let styleNote {
+                        styleBadge(styleNote, night: night)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                            .padding(.bottom, 24)
+                            .transition(.opacity)
+                    }
                     if showingControls {
                         controls(night: night, size: geometry.size)
                             .transition(.opacity.combined(with: .scale(scale: 0.97)))
                     }
                 }
                 .animation(.easeInOut(duration: 0.4), value: showingControls)
+                .animation(.easeInOut(duration: 0.5), value: styles.currentId)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
+                // slide sideways: the next or previous style
+                .gesture(DragGesture(minimumDistance: 40).onEnded { drag in
+                    guard !showingControls, abs(drag.translation.width) > 80,
+                          abs(drag.translation.width) > abs(drag.translation.height) * 1.5 else { return }
+                    slideStyle(drag.translation.width < 0 ? 1 : -1)
+                })
             }
-            .foregroundStyle(night ? Self.nightRed : Theme.text)
+            .foregroundStyle(night ? Self.nightRed : style.text)
             .animation(.easeInOut(duration: 2.5), value: night)
         }
         .ignoresSafeArea()
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        .onAppear { styles.resetToDefault() }  // each time the Dock opens: the default style
         .onChange(of: timer.finished) { finished in
             if finished { showControls() }
         }
@@ -65,123 +87,35 @@ struct DockView: View {
         }
     }
 
-    // MARK: at rest
+    // MARK: styles
 
-    @ViewBuilder
-    private func resting(_ date: Date, size: CGSize, night: Bool) -> some View {
-        if size.width > size.height {
-            // on its side (the usual): the clock on the left; on the right the song at
-            // the top and the shortcuts at the bottom, the column as tall as the clock
-            // block so the two sides line up, and the grid filling the column
-            let column = size.width * (isPhone ? 0.36 : 0.34)
-            let block = size.height * (isPhone ? 0.78 : 0.62)
-            HStack(alignment: .center, spacing: size.width * 0.06) {
-                clock(date, height: size.height * (isPhone ? 0.42 : 0.32), night: night)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 0) {
-                    song(night: night)
-                    Spacer(minLength: size.height * 0.05)
-                    shortcutGrid(columns: 3, width: column, night: night)
+    private func slideStyle(_ by: Int) {
+        guard styles.styles.count > 1 else { return }
+        model.tap()
+        styles.step(by)
+        styleNote = styles.current.name
+        hideStyleNote?.cancel()
+        let hide = DispatchWorkItem { styleNote = nil }
+        hideStyleNote = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: hide)
+    }
+
+    /// The style's name and a dot for each style, after sliding.
+    private func styleBadge(_ name: String, night: Bool) -> some View {
+        VStack(spacing: 8) {
+            Text(name).font(.system(size: 15, weight: .semibold))
+            HStack(spacing: 6) {
+                ForEach(styles.styles) { style in
+                    Circle()
+                        .fill(style.id == styles.currentId ? Color.white : Color.white.opacity(0.3))
+                        .frame(width: 6, height: 6)
                 }
-                .frame(width: column, height: block, alignment: .topLeading)
-            }
-            .padding(.horizontal, size.width * 0.06)
-        } else {
-            // upright: clock and song in the upper part, shortcuts across the bottom
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
-                clock(date, height: size.width * 0.3, night: night)
-                song(night: night).padding(.top, size.height * 0.05)
-                Spacer(minLength: size.height * 0.06)
-                shortcutGrid(columns: isPhone ? 3 : 6, width: size.width * 0.84, night: night)
-            }
-            .padding(.horizontal, size.width * 0.08)
-            .padding(.vertical, size.height * 0.07)
-        }
-    }
-
-    private func clock(_ date: Date, height: CGFloat, night: Bool) -> some View {
-        let time = date.formatted(.dateTime.hour().minute())
-        return VStack(alignment: .leading, spacing: height * 0.04) {
-            Text(time)
-                .font(.system(size: height, weight: .thin))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .animation(.easeInOut(duration: 0.9), value: time)  // the minutes roll over gently
-                .minimumScaleFactor(0.4)
-                .lineLimit(1)
-            Text(date, format: .dateTime.weekday(.wide).day().month(.wide))
-                .font(.system(size: max(15, height * 0.13)))
-                .foregroundStyle(night ? Self.nightDim : Theme.secondary)
-                .padding(.leading, height * 0.04)
-            if timer.isRunning || timer.isPaused || timer.finished {
-                Label(timer.finished ? "Time's up" : timer.remainingText,
-                      systemImage: timer.finished ? "bell.fill" : timer.isPaused ? "pause.fill" : "timer")
-                    .font(.system(size: max(15, height * 0.13), weight: .medium))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.easeInOut(duration: 0.3), value: timer.remainingText)
-                    .foregroundStyle(timer.finished ? Theme.warm : night ? Self.nightRed : Theme.text)
-                    .padding(.leading, height * 0.04)
             }
         }
-    }
-
-    @ViewBuilder private func song(night: Bool) -> some View {
-        if let playing = model.nowPlaying, !playing.title.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                EqualizerBars(playing: playing.playing, color: night ? Self.nightRed : Theme.text)
-                    .padding(.bottom, 6)
-                HStack(alignment: .center, spacing: isPhone ? 12 : 20) {
-                    Text(playing.title)
-                        .font(.system(size: isPhone ? 19 : 28, weight: .semibold))
-                        .lineLimit(2)
-                    Spacer(minLength: 0)
-                    if model.controls?.volume != nil {
-                        DockVolume(model: model, color: night ? Self.nightRed : Theme.text)
-                            .frame(width: isPhone ? 72 : 120)
-                    }
-                }
-                Text(playing.artist.isEmpty ? playing.app : playing.artist)
-                    .font(.system(size: isPhone ? 14 : 18))
-                    .foregroundStyle(night ? Self.nightDim : Theme.secondary)
-                    .lineLimit(1)
-            }
-            .animation(.easeInOut(duration: 0.6), value: playing.title)
-        }
-    }
-
-    /// The six chosen shortcuts, quiet, one tap each.
-    /// Spread over the width it's given: tiles grow with the room, gaps with them.
-    private func shortcutGrid(columns: Int, width: CGFloat, night: Bool) -> some View {
-        let gap = width * (columns > 3 ? 0.04 : 0.08)
-        let side = min((width - gap * CGFloat(columns - 1)) / CGFloat(columns), isPhone ? 84 : 110)
-        let spread = (width - side * CGFloat(columns)) / CGFloat(max(columns - 1, 1))
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: spread), count: columns),
-                         alignment: .leading, spacing: min(spread, side * 0.4)) {
-            ForEach(chosenShortcuts) { shortcut in
-                Button {
-                    model.tap()
-                    model.run(shortcut)
-                } label: {
-                    ShortcutIcon(shortcut: shortcut, size: side * 0.36)
-                        .frame(width: side, height: side)
-                        .background(RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
-                            .fill(night ? Self.nightRed.opacity(0.12) : Color.white.opacity(0.07)))
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityLabel(shortcut.title)
-            }
-        }
-    }
-
-    /// A slow breathing light behind everything, in a colour of the song's own.
-    private func glow(night: Bool, size: CGSize) -> some View {
-        let colour = night ? Color(red: 0.6, green: 0.05, blue: 0.05) : songColour
-        return BreathingGlow(colour: colour.opacity(night ? 0.16 : 0.3), diameter: max(size.width, size.height) * 0.9)
-            .position(x: size.width * 0.22, y: size.height * 0.3)
-            .animation(.easeInOut(duration: 2), value: model.nowPlaying?.title)
-            .allowsHitTesting(false)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Color.black.opacity(0.6)))
+        .foregroundStyle(night ? Self.nightRed : .white)
     }
 
     private var songColour: Color {
@@ -345,8 +279,12 @@ struct DockView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + Prefs.dockFadeSeconds, execute: hide)
     }
 
+    /// The chosen shortcuts' ids, leaving out any since deleted: a deleted one
+    /// would otherwise keep its slot, shown nowhere, and block choosing a sixth.
     private var chosenList: [String] {
-        chosenIds.isEmpty ? model.shortcuts.prefix(6).map(\.id) : chosenIds.components(separatedBy: ",")
+        let existing = Set(model.shortcuts.map(\.id))
+        let chosen = chosenIds.components(separatedBy: ",").filter { existing.contains($0) }
+        return chosen.isEmpty ? model.shortcuts.prefix(6).map(\.id) : chosen
     }
 
     private var chosenShortcuts: [Shortcut] {
@@ -433,31 +371,12 @@ private struct CountdownWheel: UIViewRepresentable {
     }
 }
 
-/// A soft light that slowly grows and shrinks.
-private struct BreathingGlow: View {
-    let colour: Color
-    let diameter: CGFloat
-    @State private var big = false
-
-    var body: some View {
-        Circle()
-            .fill(RadialGradient(colors: [colour, colour.opacity(0)], center: .center,
-                                 startRadius: 0, endRadius: diameter / 2))
-            .frame(width: diameter, height: diameter)
-            .scaleEffect(big ? 1.12 : 1)
-            .opacity(big ? 1 : 0.75)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 9).repeatForever(autoreverses: true)) { big = true }
-            }
-    }
-}
-
 /// Four bars bouncing while music plays, still when it's paused.
 /// The laptop's volume as a thin line next to the song. It fades out after a
 /// few seconds so the Dock stays calm, but keeps working: sliding where it was
 /// brings it back. Sliding moves it from where it is (it doesn't jump to the
 /// finger), so touching the hidden line never changes the volume by surprise.
-private struct DockVolume: View {
+struct DockVolume: View {
     @ObservedObject var model: AppModel
     let color: Color
     static let visibleSeconds = 3.0
@@ -532,7 +451,7 @@ private struct DockVolume: View {
     }
 }
 
-private struct EqualizerBars: View {
+struct EqualizerBars: View {
     let playing: Bool
     let color: Color
 

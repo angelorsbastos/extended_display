@@ -4,9 +4,12 @@ import UIKit
 /// The user's preferences, kept on this device (UserDefaults). Read where they
 /// matter; the Settings screen changes them.
 enum Prefs {
-    // connection
-    static let connection = "connection.mode"            // "auto", "cable", "wireless"
-    static let allowRemote = "connection.remote"         // Tailscale, away from home
+    // connection: per way, "auto" (connect by itself), "ask" (wait for a tap on
+    // Connect) or "off"
+    static func connectKey(_ transport: Transport) -> String { "connect.\(transport.rawValue)" }
+    // the settings before that (still read once, to carry them over)
+    private static let oldMode = "connection.mode"       // "auto", "cable", "wireless"
+    private static let oldRemote = "connection.remote"   // Tailscale on/off
     // screen (sent to the laptop: prefs)
     static let extendScale = "screen.extendScale"        // 175 / 200 / 225
     static let quality = "screen.quality"                // smooth / balanced / sharp
@@ -29,8 +32,19 @@ enum Prefs {
         UserDefaults.standard.object(forKey: key) as? T ?? fallback
     }
 
-    static var connectionMode: String { value(connection, "auto") }
-    static var remoteAllowed: Bool { value(allowRemote, true) }
+    /// How this way of connecting behaves: "auto", "ask" or "off". New: "ask"
+    /// (nothing connects until you tap Connect); a way the old settings had
+    /// switched off stays off.
+    static func connectMode(_ transport: Transport) -> String {
+        if let mode = UserDefaults.standard.string(forKey: connectKey(transport)) { return mode }
+        let old = UserDefaults.standard.string(forKey: oldMode) ?? "auto"
+        let oldRemoteOn = UserDefaults.standard.object(forKey: oldRemote) as? Bool ?? true
+        switch transport {
+        case .usb: return old == "wireless" ? "off" : "ask"
+        case .wifi: return old == "cable" ? "off" : "ask"
+        case .remote: return old == "cable" || !oldRemoteOn ? "off" : "ask"
+        }
+    }
     static var extendScaleValue: Int { value(extendScale, 200) }
     static var qualityValue: String { value(quality, "balanced") }
     static var pointerSpeedValue: Double { value(pointerSpeed, 2.2) }
@@ -41,13 +55,9 @@ enum Prefs {
     static var dockFadeSeconds: Double { value(dockFade, 6.0) }
     static var hapticsOn: Bool { value(haptics, true) }
 
-    /// May the laptop connect this way, by the user's connection setting?
+    /// May the laptop connect this way at all (automatically or on a tap)?
     static func allows(_ transport: Transport) -> Bool {
-        switch transport {
-        case .usb: return connectionMode != "wireless"
-        case .wifi: return connectionMode != "cable"
-        case .remote: return connectionMode != "cable" && remoteAllowed
-        }
+        connectMode(transport) != "off"
     }
 }
 
@@ -62,8 +72,9 @@ func haptic() {
 struct SettingsView: View {
     @ObservedObject var model: AppModel
 
-    @AppStorage(Prefs.connection) private var connection = "auto"
-    @AppStorage(Prefs.allowRemote) private var allowRemote = true
+    @AppStorage(Prefs.connectKey(.usb)) private var cableMode = Prefs.connectMode(.usb)
+    @AppStorage(Prefs.connectKey(.wifi)) private var wifiMode = Prefs.connectMode(.wifi)
+    @AppStorage(Prefs.connectKey(.remote)) private var remoteMode = Prefs.connectMode(.remote)
     @AppStorage(Prefs.extendScale) private var extendScale = 200
     @AppStorage(Prefs.quality) private var quality = "balanced"
     @AppStorage(Prefs.soundHome) private var soundHome = false
@@ -83,18 +94,15 @@ struct SettingsView: View {
             TopBar(title: "Settings", model: model)
             Form {
                 Section {
-                    Picker("Connect by", selection: $connection) {
-                        Text("Automatic").tag("auto")
-                        Text("Cable only").tag("cable")
-                        Text("Wireless only").tag("wireless")
-                    }
-                    Toggle("Connect from afar (Tailscale)", isOn: $allowRemote)
-                        .disabled(connection == "cable")
+                    modePicker("Cable", icon: "cable.connector", selection: $cableMode)
+                    modePicker("Wi-Fi", icon: "wifi", selection: $wifiMode)
+                    modePicker("Tailscale (away)", icon: "globe", selection: $remoteMode)
                     Button("Connection details") { showingDetails = true }
                 } header: {
                     Text("Connection")
                 } footer: {
-                    Text("Automatic uses the cable when it's plugged in, then Wi-Fi, then Tailscale.")
+                    Text("Automatic connects by itself. Ask waits until you tap Connect on the home "
+                         + "screen. With several ways available, the cable wins, then Wi-Fi, then Tailscale.")
                 }
 
                 if !isPhone {
@@ -146,8 +154,10 @@ struct SettingsView: View {
                 } header: {
                     Text("Dock")
                 } footer: {
-                    Text("At night the Dock turns dim red.")
+                    Text("At night the Dock turns dim red, whatever its style.")
                 }
+
+                DockStylesSection(model: model)
 
                 Section("General") {
                     Toggle("Haptics", isOn: $haptics)
@@ -175,12 +185,23 @@ struct SettingsView: View {
             }
             .preferredColorScheme(.dark)
         }
-        .onChange(of: connection) { _ in model.applyConnectionPrefs() }
-        .onChange(of: allowRemote) { _ in model.applyConnectionPrefs() }
+        .onChange(of: cableMode) { _ in model.applyConnectionPrefs() }
+        .onChange(of: wifiMode) { _ in model.applyConnectionPrefs() }
+        .onChange(of: remoteMode) { _ in model.applyConnectionPrefs() }
         .onChange(of: extendScale) { _ in model.sendPrefs() }
         .onChange(of: quality) { _ in model.sendPrefs() }
         .onChange(of: soundHome) { _ in model.applySoundPrefs() }
         .onChange(of: soundRemote) { _ in model.applySoundPrefs() }
+    }
+}
+
+private func modePicker(_ title: String, icon: String, selection: Binding<String>) -> some View {
+    Picker(selection: selection) {
+        Text("Automatic").tag("auto")
+        Text("Ask").tag("ask")
+        Text("Off").tag("off")
+    } label: {
+        Label(title, systemImage: icon)
     }
 }
 

@@ -27,6 +27,18 @@ struct ConnectionPanel: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+            if model.connected {
+                Button(role: .destructive) {
+                    model.disconnect()
+                } label: {
+                    Label("Disconnect", systemImage: "bolt.horizontal.circle")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                Text("Ways set to Automatic in Settings will connect again by themselves.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if let error = model.listenError {
                 Text(error)
                     .font(.callout)

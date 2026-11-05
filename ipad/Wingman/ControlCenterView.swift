@@ -19,13 +19,24 @@ struct ControlCenterView: View {
             if isPhone {
                 GeometryReader { geometry in
                     ScrollView(showsIndicators: false) {
-                        phoneTiles(width: geometry.size.width)
-                            .padding(.bottom, 20)
+                        VStack(spacing: gap) {
+                            if !model.connected {
+                                ConnectCard(model: model)
+                            }
+                            phoneTiles(width: geometry.size.width)
+                        }
+                        .padding(.bottom, 20)
                     }
                 }
             } else {
                 GeometryReader { geometry in
                     padTiles(geometry.size)
+                        // not connected: the Connect card floats over the dimmed tiles
+                        .overlay {
+                            if !model.connected {
+                                ConnectCard(model: model).padding(24)
+                            }
+                        }
                 }
             }
         }
@@ -79,7 +90,7 @@ struct ControlCenterView: View {
         case .usb: return "Connected by cable"
         case .wifi: return "Connected over Wi-Fi"
         case .remote: return "Connected from afar"
-        case nil: return "Not connected. Tap the plug for details."
+        case nil: return model.connectStage == nil ? "Not connected" : "Connecting…"
         }
     }
 

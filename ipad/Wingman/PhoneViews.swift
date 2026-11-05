@@ -8,13 +8,7 @@ import UIKit
 /// hold then move = drag. The keyboard button types into the laptop.
 struct TrackpadView: View {
     @ObservedObject var model: AppModel
-    @State private var typing = false
-    @State private var typed = TrackpadView.baseline
     @FocusState private var keyboardUp: Bool
-
-    /// The text field always holds one space, so deleting is noticed even when
-    /// nothing was typed (it becomes a Backspace on the laptop).
-    static let baseline = " "
 
     var body: some View {
         VStack(spacing: 12) {
@@ -36,27 +30,7 @@ struct TrackpadView: View {
                 }
             }
             // invisible: it only brings up the keyboard and catches what's typed
-            TextField("", text: $typed)
-                .focused($keyboardUp)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
-                .onChange(of: typed) { text in
-                    if text == Self.baseline { return }
-                    if text.count < Self.baseline.count {
-                        key(42)  // Backspace
-                    } else if text.hasPrefix(Self.baseline) {
-                        model.pointer(["type": "type_text", "text": String(text.dropFirst(Self.baseline.count))])
-                    } else {
-                        model.pointer(["type": "type_text", "text": text])
-                    }
-                    typed = Self.baseline
-                }
-                .onSubmit {
-                    key(40)  // Enter
-                    keyboardUp = true  // keep typing
-                }
+            LaptopTyping(send: model.pointer, focus: $keyboardUp)
         }
         .screenPadding()
         .foregroundStyle(.white)
@@ -64,8 +38,7 @@ struct TrackpadView: View {
 
     /// Press and release one key (HID usage, like the iPad's keyboard sends).
     private func key(_ usage: Int) {
-        model.pointer(["type": "key", "usage": usage, "down": true])
-        model.pointer(["type": "key", "usage": usage, "down": false])
+        LaptopTyping.press(usage, send: model.pointer)
     }
 
     private func button(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

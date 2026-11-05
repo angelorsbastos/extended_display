@@ -29,6 +29,20 @@ final class StreamServer {
     var onPairingEnded: ((String?) -> Void)?
     /// What the Wi-Fi side is doing, for the home screen.
     var onWifiState: ((WifiState) -> Void)?
+    /// How far a connection has got, for the Connect card on the home screen.
+    var onStage: ((ConnectStage) -> Void)?
+    /// A laptop tried a way that's set to "Ask": it's there, waiting for a tap on Connect.
+    var onNearby: ((Transport) -> Void)?
+
+    enum ConnectStage: Equatable {
+        case found(Transport)     // the laptop reached this device
+        case pairing              // first time over Wi-Fi: the code
+        case securing             // logging in with the pairing key, switching to encryption
+        case failed(String)       // a connection broke off before it was ready
+    }
+
+    /// The user tapped Connect: ways set to "Ask" may connect too (until Disconnect).
+    private var armed = false
 
     enum WifiState: Equatable {
         case starting
@@ -53,6 +67,7 @@ final class StreamServer {
         var cipher: Cipher?
         var pairing: PairingExchange?
         var login: (key: Data, laptopNonce: Data, ipadNonce: Data)?
+        var closedEarly = false  // reported as a failed stage once
 
         init(_ connection: NWConnection, _ transport: Transport) {
             self.connection = connection
@@ -84,6 +99,19 @@ final class StreamServer {
                 return
             }
             self.sendFrame(type.rawValue, payload, on: link) { then(true) }
+        }
+    }
+
+    /// Connect: let ways set to "Ask" in; Disconnect: keep them out again and hang up.
+    func setArmed(_ on: Bool) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.armed = on
+            // Disconnect hangs up whatever is connected (a way set to Automatic
+            // will come back by itself; that's what Automatic means)
+            if !on, let link = self.active {
+                self.close(link)
+            }
         }
     }
 
@@ -184,13 +212,17 @@ final class StreamServer {
             "type": "identity", "ipad_id": PairingStore.ipadId, "ipad_name": deviceName,
             "device": UIDevice.current.userInterfaceIdiom == .phone ? "iphone" : "ipad",
             "paired_laptops": PairingStore.laptopIds]
-        // Settings turned this way of connecting off: say so (the laptop waits a
-        // while before trying it again) and hang up
-        guard Prefs.allows(link.transport) else {
-            identity["refused"] = true
+        // Settings turned this way off, or set it to "Ask" and Connect wasn't
+        // tapped: say which (the laptop retries "ask" every few seconds, "off"
+        // rarely) and hang up
+        let mode = Prefs.connectMode(link.transport)
+        if mode == "off" || (mode == "ask" && !armed) {
+            identity["refused"] = mode
             sendJSON(identity, on: link) { connection.cancel() }
+            if mode == "ask" { onNearby?(link.transport) }
             return
         }
+        onStage?(.found(link.transport))
         sendJSON(identity, on: link)
         if link.ready {
             activate(link)
@@ -300,6 +332,7 @@ final class StreamServer {
         switch message["type"] as? String {
         case "pair_hello":
             guard let laptopId = message["laptop_id"] as? String else { break }
+            onStage?(.pairing)
             let exchange = PairingExchange(laptopId: laptopId,
                                            laptopName: message["laptop_name"] as? String ?? "your laptop")
             link.pairing = exchange
@@ -329,6 +362,7 @@ final class StreamServer {
         case "auth_hello":
             guard let laptopId = message["laptop_id"] as? String,
                   let laptopNonce = Data(base64: message["nonce"]) else { break }
+            onStage?(.securing)
             guard let key = PairingStore.key(for: laptopId) else {
                 // e.g. the app was reinstalled: tells the laptop to pair again
                 sendJSON(["type": "auth_unknown"], on: link) { [weak self] in self?.close(link) }
@@ -390,6 +424,11 @@ final class StreamServer {
         if link === pairingLink {
             pairingLink = nil
             onPairingEnded?("The laptop stopped pairing.")
+        }
+        if !link.ready && !link.closedEarly {
+            link.closedEarly = true
+            let how = link.transport == .usb ? "cable" : link.transport == .wifi ? "Wi-Fi" : "Tailscale"
+            onStage?(.failed("The connection over \(how) broke off before it was ready."))
         }
         // ignore links that were already replaced by a newer one
         guard link === active else { return }

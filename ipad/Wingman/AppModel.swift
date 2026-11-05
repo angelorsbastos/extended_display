@@ -24,6 +24,30 @@ let isPhone = UIDevice.current.userInterfaceIdiom == .phone
 /// App state, shared by all screens. Published properties change on the main thread only.
 final class AppModel: ObservableObject {
     @Published var connected = false
+    /// The playing song's cover from the laptop, for the Dock's album background.
+    @Published var artwork: UIImage?
+    /// The Connect card's progress: nil until Connect is tapped (or a way set to
+    /// Automatic starts connecting), then each stage as it happens.
+    @Published var connectStage: ConnectStage?
+    /// A way set to "Ask" that the laptop just tried: it's reachable, tap Connect.
+    @Published var nearby: Transport?
+    /// Connect was tapped (and not Disconnect since).
+    @Published private(set) var wantsConnection = false
+    /// For the Connect card: the way the current attempt arrived, how far it got
+    /// (ConnectCard.Step's number, kept when it fails), and whether it paired.
+    @Published private(set) var transportTrying: Transport?
+    @Published private(set) var lastReachedStep: Int?
+    @Published private(set) var pairedDuringConnect = false
+    private var lookingTimeout: DispatchWorkItem?
+
+    enum ConnectStage: Equatable {
+        case looking
+        case found(Transport)
+        case pairing
+        case securing
+        case connected(Transport)
+        case failed(String)
+    }
     /// How the laptop is connected right now, when it is.
     @Published var transport: Transport?
     /// Set while a laptop asks to pair over Wi-Fi: its name, for the code screen.
@@ -116,6 +140,9 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.connected = true
                 self.transport = transport
+                self.nearby = nil
+                self.lookingTimeout?.cancel()
+                self.connectStage = .connected(transport)
                 self.soundOnIPad = Self.soundSetting(for: transport)
                 if self.soundOnIPad {
                     self.server.send(json: ["type": "sound", "on": true])
@@ -158,11 +185,43 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.connected = false
                 self.transport = nil
+                // dropped while Connect is on: it reconnects by itself, show that
+                self.connectStage = nil
+                if self.wantsConnection { self.startLooking() }
                 self.nowPlaying = nil
                 self.controls = nil
                 if case .video = self.screen {
                     self.goHome()
                 }
+            }
+        }
+        server.onStage = { [weak self] stage in
+            DispatchQueue.main.async {
+                guard let self, !self.connected else { return }  // e.g. a spare Wi-Fi link while on the cable
+                switch stage {
+                case .found(let transport):
+                    self.lookingTimeout?.cancel()
+                    self.transportTrying = transport
+                    self.lastReachedStep = 1
+                    self.pairedDuringConnect = false
+                    self.connectStage = .found(transport)
+                case .pairing:
+                    self.lastReachedStep = 2
+                    self.pairedDuringConnect = true
+                    self.connectStage = .pairing
+                case .securing:
+                    self.lastReachedStep = 3
+                    self.connectStage = .securing
+                case .failed(let reason):
+                    self.connectStage = .failed(reason)
+                }
+            }
+        }
+        server.onNearby = { [weak self] transport in
+            DispatchQueue.main.async {
+                guard let self, !self.connected else { return }
+                // the cable outranks the others: don't let a Wi-Fi try replace "by cable"
+                if self.nearby == nil || transport == .usb || self.nearby == .remote { self.nearby = transport }
             }
         }
         server.onVideo = { [weak self] data in
@@ -182,6 +241,42 @@ final class AppModel: ObservableObject {
         } catch {
             listenError = "Could not start listening for the laptop: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: connecting
+
+    /// The Connect button: ways set to "Ask" may connect now (until Disconnect).
+    func connect() {
+        tap()
+        wantsConnection = true
+        server.setArmed(true)
+        startLooking()
+    }
+
+    func disconnect() {
+        tap()
+        wantsConnection = false
+        lookingTimeout?.cancel()
+        connectStage = nil
+        nearby = nil
+        server.setArmed(false)
+    }
+
+    /// "Looking for your laptop", and after a while, if nothing came, what to check.
+    private func startLooking() {
+        connectStage = .looking
+        transportTrying = nil
+        lastReachedStep = 0
+        pairedDuringConnect = false
+        lookingTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, !self.connected, self.connectStage == .looking else { return }
+            self.connectStage = .failed("No laptop answered. Is Wingman running on the laptop (its icon "
+                                        + "in the tray)? For Wi-Fi, both must be on the same network; "
+                                        + "away from home, Tailscale on both. Still trying meanwhile.")
+        }
+        lookingTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: timeout)
     }
 
     // MARK: actions from the screens
@@ -428,6 +523,11 @@ final class AppModel: ObservableObject {
     // MARK: messages from the laptop (on the server's queue)
 
     private func handle(_ message: LaptopMessage) {
+        if message.type == "bye" {
+            // Disconnect, chosen in the laptop's tray menu: like tapping Disconnect here
+            DispatchQueue.main.async { self.disconnect() }
+            return
+        }
         if message.type == "video_started" {
             // a new stream starts with new parameter sets; drop the old ones
             decoder.reset()
@@ -463,6 +563,8 @@ final class AppModel: ObservableObject {
                 }
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
+            case "artwork":
+                self.artwork = message.jpeg.flatMap { Data(base64Encoded: $0) }.flatMap(UIImage.init(data:))
             case "controls":
                 self.controls = message.controls
             case "video_started":

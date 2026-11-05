@@ -8,6 +8,8 @@ struct VideoScreen: View {
     @ObservedObject var model: AppModel
     @State private var showHint = false
     @AppStorage(Prefs.quickButton) private var showQuickButton = true
+    @FocusState private var typing: Bool
+    @ObservedObject private var hardwareKeyboard = HardwareKeyboard.shared
 
     var body: some View {
         ZStack {
@@ -42,8 +44,13 @@ struct VideoScreen: View {
             }
 
             if model.receivingVideo && !model.showingClipboard && showQuickButton {
-                QuickButton(model: model)
+                // the keyboard button rides along under the quick button; not offered
+                // with a hardware keyboard attached (its keys already go to the laptop)
+                QuickButton(model: model, typing: hardwareKeyboard.attached ? nil : $typing)
             }
+
+            // invisible: brings up the on-screen keyboard and types into the laptop
+            LaptopTyping(send: model.pointer, focus: $typing)
 
             if model.showingClipboard {
                 QuickPanel(model: model)
@@ -85,6 +92,8 @@ struct VideoScreen: View {
 /// the nearer side, and stays where it was put next time.
 struct QuickButton: View {
     @ObservedObject var model: AppModel
+    /// When given, a second small button under it shows or hides the on-screen keyboard.
+    var typing: FocusState<Bool>.Binding?
     @AppStorage("quickButton.x") private var x = 0.97   // fractions of the screen
     @AppStorage("quickButton.y") private var y = 0.12
     @State private var dragging: CGSize = .zero
@@ -93,6 +102,14 @@ struct QuickButton: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
+            let spot = CGPoint(x: min(max(x * size.width + dragging.width, 24), size.width - 24),
+                               y: min(max(y * size.height + dragging.height, 24), size.height - 24))
+            if let typing {
+                // below the quick button, or above it near the bottom of the screen
+                let below = spot.y < size.height - 80
+                keyboardButton(typing)
+                    .position(x: spot.x, y: spot.y + (below ? 48 : -48))
+            }
             Image(systemName: "slider.horizontal.3")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.white)
@@ -100,8 +117,7 @@ struct QuickButton: View {
                 .background(Circle().fill(Color.black.opacity(0.55)))
                 .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
                 .opacity(pressed || dragging != .zero ? 1 : 0.4)
-                .position(x: min(max(x * size.width + dragging.width, 24), size.width - 24),
-                          y: min(max(y * size.height + dragging.height, 24), size.height - 24))
+                .position(spot)
                 .gesture(DragGesture(minimumDistance: 0)
                     .onChanged { drag in
                         pressed = true
@@ -127,6 +143,22 @@ struct QuickButton: View {
                     })
                 .accessibilityLabel("Quick controls")
         }
+    }
+
+    private func keyboardButton(_ typing: FocusState<Bool>.Binding) -> some View {
+        Button {
+            model.tap()
+            typing.wrappedValue.toggle()
+        } label: {
+            Image(systemName: typing.wrappedValue ? "keyboard.chevron.compact.down" : "keyboard")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
+                .opacity(typing.wrappedValue ? 1 : 0.4)
+        }
+        .accessibilityLabel(typing.wrappedValue ? "Hide keyboard" : "Keyboard")
     }
 }
 

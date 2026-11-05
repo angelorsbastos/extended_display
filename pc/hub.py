@@ -34,7 +34,8 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     laptop_input {on} (Ctrl+Alt+I switched), apps {apps: [{name, open}]},
                     video_started {width, height},
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
-                    now_playing {now_playing}, error {message}, clipboard, stats {stats} (stats.read()),
+                    now_playing {now_playing}, artwork {title, jpeg: base64, "" if none},
+                    error {message}, clipboard, stats {stats} (stats.read()),
                     controls {controls} (see controls.state)
     clipboard (both ways): {kind: "text", text} or {kind: "image", png: base64};
                            from the iPad also paste: true to press Ctrl+V after
@@ -234,13 +235,21 @@ class VideoStream:
 
 
 def send_now_playing(session):
-    """Tell the iPad whenever the song or play/pause state changes."""
+    """Tell the iPad whenever the song or play/pause state changes, and send
+    the song's cover once per song (the Dock can use it as its background)."""
     last = "unset"
+    last_song = None
     while not session.closed.wait(1):
         current = nowplaying.current()
         if current != last:
             try:
                 session.send_json({"type": "now_playing", "now_playing": current})
+                song = (current["title"], current["artist"]) if current else None
+                if song != last_song:
+                    last_song = song
+                    cover = nowplaying.artwork() if song else None
+                    session.send_json({"type": "artwork", "title": song[0] if song else "",
+                                       "jpeg": cover or ""})
             except OSError:
                 return
             last = current

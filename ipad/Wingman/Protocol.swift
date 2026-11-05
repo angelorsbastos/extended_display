@@ -137,6 +137,9 @@ struct LaptopMessage: Decodable {
     let kind: String?
     let text: String?
     let png: String?
+    // artwork: the playing song's cover (title, jpeg base64; "" when it has none)
+    let title: String?
+    let jpeg: String?
 
     static func decode(_ data: Data) -> LaptopMessage? {
         let decoder = JSONDecoder()
