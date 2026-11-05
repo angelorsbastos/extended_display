@@ -59,12 +59,28 @@ def main():
         worker.join(timeout=8)  # lets the hub remove the virtual screen first
         icon.stop()
 
-    icon = pystray.Icon(
-        "Wingman", Image.open(ICON), "Wingman",
-        menu=pystray.Menu(
-            pystray.MenuItem(lambda _item: status["text"], None, enabled=False),
-            pystray.MenuItem("Open log", lambda: os.startfile(LOG)),
-            pystray.MenuItem("Quit", quit_hub)))
+    def disconnect_action(key):
+        return lambda: hub.disconnect(key)  # pystray calls actions with at most (icon, item)
+
+    def device_items():
+        """The menu, rebuilt each time it opens: the status, then each connected
+        device (how it's connected, and a Disconnect), then Open log and Quit."""
+        items = [pystray.MenuItem(lambda _item: status["text"], None, enabled=False),
+                 pystray.Menu.SEPARATOR]
+        devices = hub.connected_devices()
+        if not devices:
+            items.append(pystray.MenuItem("No iPad or iPhone connected", None, enabled=False))
+        for key, name, device, transport in devices:
+            how = {"usb": "cable", "wifi": "Wi-Fi", "remote": "Tailscale"}.get(transport, transport)
+            kind = "iPhone" if device == "iphone" else "iPad"
+            items.append(pystray.MenuItem(f"{name} ({kind}, {how})", pystray.Menu(
+                pystray.MenuItem("Disconnect", disconnect_action(key)))))
+        items += [pystray.Menu.SEPARATOR,
+                  pystray.MenuItem("Open log", lambda: os.startfile(LOG)),
+                  pystray.MenuItem("Quit", quit_hub)]
+        return items
+
+    icon = pystray.Icon("Wingman", Image.open(ICON), "Wingman", menu=pystray.Menu(device_items))
 
     worker = threading.Thread(target=hub.run, args=(stop, on_status), daemon=True)
     worker.start()

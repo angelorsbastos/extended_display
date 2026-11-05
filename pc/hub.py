@@ -30,6 +30,7 @@ Wire format, both directions: [u8 type][u32 big-endian length][payload]
                     timer_done (the Dock's timer ran out: indicator and sound here),
                     sound {on} (play the laptop's sound on the iPad, see audio.py)
     laptop -> iPad: hello {shortcuts, laptop_name, laptop_input} (also after save_shortcuts),
+                    bye (Disconnect chosen in the tray menu: the device stops asking to connect),
                     laptop_input {on} (Ctrl+Alt+I switched), apps {apps: [{name, open}]},
                     video_started {width, height},
                     audio_started {sample_rate, channels, config: base64 AudioSpecificConfig},
@@ -709,10 +710,12 @@ class AlreadyConnected(Exception):
 
 
 class Refused(AlreadyConnected):
-    """The device's settings turn this way of connecting off (e.g. "Wireless only")."""
+    """The device declined this connection: its settings turn this way off, or
+    set it to "Ask" and nobody has tapped Connect yet."""
 
 
-REFUSED_RETRY = 10  # seconds before trying a way the device refused again
+REFUSED_RETRY = 10  # seconds before trying a way the device turned off again
+ASK_RETRY = 2       # ...or one waiting for a tap on Connect: soon, so the tap feels instant
 
 
 class Devices:
@@ -727,6 +730,7 @@ class Devices:
         self.claims = {}         # device id -> Session
         self.remote_ids = {}     # Tailscale address -> device id, learned on the first try
         self.paused_until = {}   # device id or "remote <address>" -> time (pairing/retry back-off)
+        self.asking = {}         # connection key -> (device name, when), waiting for a tap on Connect
 
     def claim(self, device_id, session):
         with self.lock:
@@ -748,6 +752,11 @@ def find_devices(devices, busy, on_status, browser):
     on the same Wi-Fi (Bonjour), or through Tailscale. `busy` = keys of the
     connections already running. Returns (new sessions, why nothing was found)."""
     found, problems = [], []
+    # devices waiting for a tap on Connect answer every few seconds; one that
+    # stopped answering (app closed, out of reach) isn't waiting any more
+    for key, (_, when) in list(devices.asking.items()):
+        if time.time() - when > 4 * ASK_RETRY + (REMOTE_RETRY if key.startswith("remote") else 0):
+            del devices.asking[key]
     try:
         cabled = usbmux.list_devices()
     except OSError:
@@ -770,6 +779,7 @@ def find_devices(devices, busy, on_status, browser):
         key = f"wifi {ipad['id']}"
         if key in busy or devices.claimed(ipad["id"]) or devices.paused_until.get(key, 0) > time.time():
             continue
+        asking = key in devices.asking  # tried a moment ago: no need to announce it again
         unpaired = secure.key_for(ipad["id"]) is None
         wait = devices.paused_until.get(ipad["id"], 0) - time.time()
         if unpaired and wait > 0:  # pairing was just cancelled; don't pop it up right away
@@ -783,7 +793,8 @@ def find_devices(devices, busy, on_status, browser):
                             "Wingman.")
             continue
         network_socket(sock)
-        on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
+        if not asking:
+            on_status(f"Found {ipad['name']} on Wi-Fi, connecting…")
         session = Session(sock, "wifi")
         session.key = key
         devices.claim(ipad["id"], session)  # so Tailscale doesn't race it to the same device
@@ -810,6 +821,9 @@ def find_devices(devices, busy, on_status, browser):
         found.append(session)
 
     searching = ", ".join(browser.networks) if browser else "nothing (no network)"
+    if devices.asking:
+        names = sorted({name for name, _ in devices.asking.values()})
+        problems.insert(0, f"{' and '.join(names)} found: tap Connect in Wingman on it.")
     reason = problems[0] if problems else (
         "Looking for the iPad / iPhone: plug in the cable, or open Wingman on the same Wi-Fi "
         f"(searching on {searching}; guest networks usually block this)."
@@ -851,9 +865,16 @@ def set_up_link(session, on_status, devices):
         session.device = identity.get("device", "ipad")  # apps before the iPhone version: iPads
         if getattr(session, "address", None):
             devices.remote_ids[session.address] = ipad_id
-        if identity.get("refused"):
-            devices.paused_until[session.key] = time.time() + REFUSED_RETRY
+        refused = identity.get("refused")
+        if refused:
+            asks = refused == "ask"
+            devices.paused_until[session.key] = time.time() + (ASK_RETRY if asks else REFUSED_RETRY)
+            if asks:
+                devices.asking[session.key] = (name, time.time())
+            else:
+                devices.asking.pop(session.key, None)
             raise Refused(name)
+        devices.asking.pop(session.key, None)
         if not devices.claim(ipad_id, session):
             raise AlreadyConnected(name)
         knows_us = secure.laptop_id() in identity.get("paired_laptops", [])
@@ -903,6 +924,32 @@ def serve(session, on_status, devices):
     handle(session)
 
 
+# the devices being served right now, for the tray menu: connection key -> Session
+live = {}
+_live_lock = threading.Lock()
+
+
+def connected_devices():
+    """[(key, name, device, transport)] of the devices connected right now."""
+    with _live_lock:
+        return [(key, s.name, getattr(s, "device", "ipad"), s.transport)
+                for key, s in live.items() if getattr(s, "ready", False) and not s.closed.is_set()]
+
+
+def disconnect(key):
+    """The tray's Disconnect: tell the device (it stops asking to connect, like
+    its own Disconnect button) and hang up."""
+    with _live_lock:
+        session = live.get(key)
+    if session is None:
+        return
+    try:
+        session.send_json({"type": "bye"})
+    except OSError:
+        pass
+    threading.Timer(0.5, session.close).start()  # let the bye arrive first
+
+
 def run(stop, on_status=print):
     """Serve iPads and iPhones until `stop` is set: each connected device gets its
     own Session and thread, and the search for more goes on meanwhile.
@@ -929,6 +976,8 @@ def run(stop, on_status=print):
                 if session.closed.is_set():
                     worker.join(timeout=5)
                     del running[key]
+                    with _live_lock:
+                        live.pop(key, None)
                     if getattr(session, "ready", False):
                         on_status(f"{session.name} disconnected.")
                         shown = None
@@ -939,6 +988,8 @@ def run(stop, on_status=print):
                 worker = threading.Thread(target=serve, daemon=True, args=(session, on_status, devices))
                 worker.start()
                 running[session.key] = (session, worker)
+                with _live_lock:
+                    live[session.key] = session
             ready = [s for s, _ in running.values() if getattr(s, "ready", False)]
             status = ("Connected: " + ", ".join(sorted(s.name for s in ready))) if ready else reason
             if status != shown and not new:
