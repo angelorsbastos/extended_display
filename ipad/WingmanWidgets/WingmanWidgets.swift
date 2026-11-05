@@ -93,6 +93,8 @@ struct LaptopWidgetView: View {
             VStack(spacing: 6) {
                 Image(systemName: "laptopcomputer").font(.title2)
                 Text("Open Wingman once").font(.caption)
+                // diagnostics, while the widgets don't fill in yet
+                Text(WidgetSnapshot.diagnosis).font(.system(size: 8)).multilineTextAlignment(.center)
             }
             .foregroundStyle(Look.secondary)
         }

@@ -36,6 +36,15 @@ struct WidgetSnapshot: Codable, Equatable {
 
     static var shared: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
+    /// Diagnostics: which group this side uses, and whether iOS really gave it
+    /// that shared storage (it only does when the signature lists the group).
+    static var diagnosis: String {
+        let alt = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String]) ?? []
+        let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) != nil
+        return "group \(appGroup), shared storage \(container ? "yes" : "NO"), "
+            + "ALTAppGroups \(alt), bundle \(Bundle.main.bundleIdentifier ?? "?")"
+    }
+
     static func load() -> WidgetSnapshot? {
         guard let data = shared?.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)

@@ -315,8 +315,14 @@ final class AppModel: ObservableObject {
         folders.forEach { try? FileManager.default.removeItem(at: $0) }
     }
 
+    private var reportedWidgetGroup = false
+
     /// Save what the widgets show (only when it changed) and let them redraw.
     func saveWidgetSnapshot() {
+        if !reportedWidgetGroup, connected {
+            reportedWidgetGroup = true
+            log("widgets: app uses " + WidgetSnapshot.diagnosis)
+        }
         let snapshot = WidgetSnapshot(
             laptopName: laptopName, connected: connected,
             battery: controls?.battery?.percent ?? lastSnapshot?.battery,
