@@ -508,6 +508,7 @@ final class DockTimer: ObservableObject {
         stopAlarm()
         scheduleNotification()
         watch()
+        updateLiveActivity()
     }
 
     func togglePause() {
@@ -522,6 +523,7 @@ final class DockTimer: ObservableObject {
             ticker = nil
             cancelNotification()
         }
+        updateLiveActivity()
     }
 
     func stop() {
@@ -531,6 +533,17 @@ final class DockTimer: ObservableObject {
         ticker = nil
         stopAlarm()
         cancelNotification()
+        updateLiveActivity()
+    }
+
+    /// The timer on the Lock Screen and in the Dynamic Island: started, updated
+    /// and ended with the timer (iOS counts down by itself, app open or not).
+    private func updateLiveActivity() {
+        guard #available(iOS 16.2, *) else { return }
+        let state = TimerActivity.ContentState(end: end, pausedRemaining: pausedRemaining, total: total,
+                                               finished: finished)
+        let active = isRunning || isPaused || finished
+        Task { await LiveTimer.show(state, active: active) }
     }
 
     private func watch() {
@@ -540,6 +553,7 @@ final class DockTimer: ObservableObject {
             self.end = nil
             self.ticker = nil
             self.finished = true
+            self.updateLiveActivity()
             // back in the app long after the end: the notification already rang
             if late < 5 {
                 self.ringAlarm()

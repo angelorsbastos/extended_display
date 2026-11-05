@@ -1,5 +1,6 @@
 import AVFoundation
 import UIKit
+import WidgetKit
 
 enum VideoMode: String {
     case extend, mirror
@@ -142,6 +143,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.connected = true
                 self.transport = transport
+                self.performPendingLink()
                 self.nearby = nil
                 self.lookingTimeout?.cancel()
                 self.connectStage = .connected(transport)
@@ -242,6 +244,76 @@ final class AppModel: ObservableObject {
             try server.start()
         } catch {
             listenError = "Could not start listening for the laptop: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: widgets and Control Center
+
+    /// What a widget or Control Center button asked for (wingman://...), done
+    /// once the laptop is connected and has sent its shortcuts.
+    private enum PendingLink {
+        case shortcut(String), control(String), media(String)
+    }
+    private var pendingLink: PendingLink?
+    private var lastSnapshot: WidgetSnapshot?
+    private var lastWidgetReload = Date.distantPast
+
+    /// wingman://shortcut/<id>, wingman://lock, wingman://playpause, wingman://dock
+    func handleLink(_ url: URL) {
+        switch url.host {
+        case "shortcut":
+            pendingLink = .shortcut(url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent)
+        case "lock":
+            pendingLink = .control("lock")
+        case "playpause":
+            pendingLink = .media("play_pause")
+        case "dock":
+            open(.dock)
+            return
+        default:
+            return
+        }
+        if connected && !shortcuts.isEmpty {
+            performPendingLink()
+        } else if !wantsConnection {
+            connect()  // tapping a widget button means "use the laptop now"
+        }
+    }
+
+    private func performPendingLink() {
+        guard connected, let link = pendingLink else { return }
+        if case .shortcut = link, shortcuts.isEmpty { return }  // the list comes with "hello"
+        pendingLink = nil
+        switch link {
+        case .shortcut(let id):
+            if let shortcut = shortcuts.first(where: { $0.id == id }) { run(shortcut) }
+        case .control(let name):
+            control(name)
+        case .media(let action):
+            media(action)
+        }
+    }
+
+    /// Save what the widgets show (only when it changed) and let them redraw.
+    func saveWidgetSnapshot() {
+        let snapshot = WidgetSnapshot(
+            laptopName: laptopName, connected: connected,
+            battery: controls?.battery?.percent ?? lastSnapshot?.battery,
+            charging: controls?.battery?.charging ?? lastSnapshot?.charging ?? false,
+            cpuTemp: controls?.cpuTemp ?? lastSnapshot?.cpuTemp,
+            songTitle: nowPlaying?.title, songArtist: nowPlaying?.artist, playing: nowPlaying?.playing ?? false,
+            shortcuts: shortcuts.prefix(8).map {
+                WidgetSnapshot.Item(id: $0.id, title: $0.title, symbol: $0.icon,
+                                    image: ($0.image?.isEmpty ?? true) ? nil : $0.image)
+            },
+            updated: Date())
+        let changed = !snapshot.sameContent(as: lastSnapshot)
+        lastSnapshot = snapshot
+        snapshot.save()  // the "updated" time, at least
+        // redrawing has a budget: on real changes, at most every half minute
+        if changed, Date().timeIntervalSince(lastWidgetReload) > 30 {
+            lastWidgetReload = Date()
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
@@ -552,6 +624,8 @@ final class AppModel: ObservableObject {
                 self.shortcuts = message.shortcuts ?? []
                 self.laptopName = message.laptopName ?? self.laptopName
                 self.laptopInput = message.laptopInput ?? false
+                self.saveWidgetSnapshot()
+                self.performPendingLink()  // a widget's shortcut waits for the shortcut list
             case "laptop_input":
                 self.laptopInput = message.on ?? false
             case "apps":
@@ -567,10 +641,12 @@ final class AppModel: ObservableObject {
                 }
             case "now_playing":
                 self.nowPlaying = message.nowPlaying
+                self.saveWidgetSnapshot()
             case "artwork":
                 self.artwork = message.jpeg.flatMap { Data(base64Encoded: $0) }.flatMap(UIImage.init(data:))
             case "controls":
                 self.controls = message.controls
+                self.saveWidgetSnapshot()
             case "video_started":
                 if let width = message.width, let height = message.height {
                     self.videoSize = CGSize(width: width, height: height)

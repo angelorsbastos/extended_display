@@ -70,6 +70,19 @@ jobs:
           echo "app says $v ($b), expected $VERSION ($BUILD)"
           [ "$v" = "$VERSION" ] && [ "$b" = "$BUILD" ] || { echo "::error::version mismatch"; exit 1; }
 
+      - name: Sign with the entitlements (ad hoc)
+        run: |
+          # the build is unsigned, which leaves out entitlements; SideStore reads
+          # them (the app group) from the signature, so sign ad hoc with them:
+          # extensions first, then the app around them
+          app=build/Build/Products/Release-iphoneos/Wingman.app
+          for ext in "$app"/PlugIns/*.appex; do
+            name=$(basename "$ext" .appex)
+            codesign --force --sign - --entitlements "$name/$name.entitlements" "$ext"
+          done
+          codesign --force --sign - --entitlements Wingman/Wingman.entitlements "$app"
+          codesign -d --entitlements - "$app" | head -20
+
       - name: Package .ipa
         run: |
           mkdir Payload

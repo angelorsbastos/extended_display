@@ -30,15 +30,22 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // a monitor should not go to sleep
         UIApplication.shared.isIdleTimerDisabled = true
         model.start()
-        // started by sharing a file to the app
+        // started by a widget / Control Center button, or by sharing a file to the app
         if !connectionOptions.urlContexts.isEmpty {
-            model.openShared(connectionOptions.urlContexts.map(\.url))
+            handleURLs(connectionOptions.urlContexts.map(\.url))
         }
     }
 
     /// Share > Wingman (or "Open in") from another app, while running.
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        model.openShared(URLContexts.map(\.url))
+        handleURLs(URLContexts.map(\.url))
+    }
+
+    private func handleURLs(_ urls: [URL]) {
+        let links = urls.filter { $0.scheme == "wingman" }
+        links.forEach { model.handleLink($0) }
+        let files = urls.filter { $0.scheme != "wingman" }
+        if !files.isEmpty { model.openShared(files) }
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
