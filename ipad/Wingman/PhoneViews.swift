@@ -3,16 +3,26 @@ import UIKit
 
 // MARK: - Trackpad
 
-/// The phone screen as a touchpad for the laptop: one finger moves the pointer,
-/// tap = click, two-finger tap = right-click, two fingers = scroll, touch and
-/// hold then move = drag. The keyboard button types into the laptop.
+/// A touchpad and keyboard for the laptop, on the iPhone and the iPad: one
+/// finger moves the pointer, tap = click, two-finger tap = right-click, two
+/// fingers = scroll, touch and hold then move = drag. Under it, a key bar
+/// (Esc, Tab, arrows, Backspace, Enter, and Ctrl / Alt / Win / Shift, which
+/// stay held while lit, like on a real keyboard: Alt, then Tab, Tab...) and
+/// the on-screen keyboard. While a modifier is held, letters and digits go as
+/// keys, so Ctrl + C copies.
 struct TrackpadView: View {
     @ObservedObject var model: AppModel
     @FocusState private var keyboardUp: Bool
+    /// Modifiers held down on the laptop right now (HID usages).
+    @State private var held: Set<Int> = []
+
+    // HID usages as the laptop maps them (pc/inputs.py): the iPad's Cmd is the
+    // laptop's Ctrl, Option is Alt, and the iPad's Ctrl is the Windows key
+    private static let ctrl = 227, alt = 226, win = 224, shift = 225
 
     var body: some View {
         VStack(spacing: 12) {
-            TopBar(title: "Trackpad", model: model)
+            TopBar(title: isPhone ? "Trackpad" : "Trackpad & keyboard", model: model)
             TouchpadSurfaceView(send: model.pointer)
                 .background(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous).fill(Theme.tile))
                 .overlay(alignment: .bottom) {
@@ -22,33 +32,102 @@ struct TrackpadView: View {
                         .padding(.bottom, 10)
                         .allowsHitTesting(false)
                 }
-            HStack(spacing: 12) {
-                button("Esc", icon: "escape") { key(41) }
-                button("Tab", icon: "arrow.right.to.line") { key(43) }
-                button(keyboardUp ? "Hide keyboard" : "Keyboard", icon: "keyboard") {
-                    keyboardUp.toggle()
-                }
-            }
+            keyBar
             // invisible: it only brings up the keyboard and catches what's typed
-            LaptopTyping(send: model.pointer, focus: $keyboardUp)
+            LaptopTyping(send: model.pointer, focus: $keyboardUp,
+                         asKeys: { !held.subtracting([Self.shift]).isEmpty })
         }
         .screenPadding()
         .foregroundStyle(.white)
+        .onDisappear { releaseAll() }  // never leave a key held on the laptop
     }
 
-    /// Press and release one key (HID usage, like the iPad's keyboard sends).
-    private func key(_ usage: Int) {
-        LaptopTyping.press(usage, send: model.pointer)
+    // MARK: keys
+
+    private var keyBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: isPhone ? 8 : 10) {
+                modifierKey("Ctrl", usage: Self.ctrl)
+                modifierKey("Alt", usage: Self.alt)
+                modifierKey("Win", icon: "squareshape.split.2x2", usage: Self.win)
+                modifierKey("Shift", icon: "shift", usage: Self.shift)
+                divider
+                key("Esc", icon: "escape", usage: 41)
+                key("Tab", icon: "arrow.right.to.line", usage: 43)
+                key("Back", icon: "delete.left", usage: 42)
+                key("Enter", icon: "return", usage: 40)
+                divider
+                key(nil, icon: "arrow.left", usage: 80)
+                key(nil, icon: "arrow.up", usage: 82)
+                key(nil, icon: "arrow.down", usage: 81)
+                key(nil, icon: "arrow.right", usage: 79)
+                divider
+                Button {
+                    model.tap()
+                    keyboardUp.toggle()
+                } label: {
+                    keyFace(keyboardUp ? "Hide" : "Keyboard",
+                            icon: keyboardUp ? "keyboard.chevron.compact.down" : "keyboard", lit: keyboardUp)
+                }
+                .buttonStyle(PressableStyle())
+            }
+            .padding(.vertical, 2)
+        }
     }
 
-    private func button(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.callout.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.tile))
+    private var divider: some View {
+        Rectangle().fill(Color.white.opacity(0.12)).frame(width: 1, height: 28)
+    }
+
+    /// A key that's pressed and released (with any held modifiers still down).
+    private func key(_ title: String?, icon: String, usage: Int) -> some View {
+        Button {
+            model.tap()
+            LaptopTyping.press(usage, send: model.pointer)
+        } label: {
+            keyFace(title, icon: icon, lit: false)
         }
         .buttonStyle(PressableStyle())
+        .accessibilityLabel(title ?? icon)
+    }
+
+    /// Ctrl / Alt / Win / Shift: tap to hold it down on the laptop, tap again to let go.
+    private func modifierKey(_ title: String, icon: String? = nil, usage: Int) -> some View {
+        let on = held.contains(usage)
+        return Button {
+            model.tap()
+            if on {
+                held.remove(usage)
+                model.pointer(["type": "key", "usage": usage, "down": false])
+            } else {
+                held.insert(usage)
+                model.pointer(["type": "key", "usage": usage, "down": true])
+            }
+        } label: {
+            keyFace(title, icon: icon, lit: on)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func keyFace(_ title: String?, icon: String?, lit: Bool) -> some View {
+        HStack(spacing: 6) {
+            if let icon { Image(systemName: icon) }
+            if let title { Text(title) }
+        }
+        .font(.system(size: isPhone ? 14 : 16, weight: .semibold))
+        .foregroundStyle(lit ? Theme.onText : Theme.text)
+        .padding(.horizontal, isPhone ? 12 : 16)
+        .frame(minWidth: isPhone ? 44 : 56, minHeight: isPhone ? 44 : 52)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(lit ? Theme.on : Theme.tile))
+    }
+
+    private func releaseAll() {
+        for usage in held {
+            model.pointer(["type": "key", "usage": usage, "down": false])
+        }
+        held.removeAll()
     }
 }
 

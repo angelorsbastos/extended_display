@@ -131,12 +131,10 @@ struct SettingsView: View {
                     Toggle("Play the laptop's sound here when away", isOn: $soundRemote)
                 }
 
-                if isPhone {
-                    Section("Trackpad") {
-                        LabeledSlider(title: "Pointer speed", value: $pointerSpeed, range: 0.8...5)
-                        LabeledSlider(title: "Scrolling speed", value: $scrollSpeed, range: 0.3...3)
-                        Toggle("Natural scrolling", isOn: $naturalScroll)
-                    }
+                Section("Trackpad") {
+                    LabeledSlider(title: "Pointer speed", value: $pointerSpeed, range: 0.8...5)
+                    LabeledSlider(title: "Scrolling speed", value: $scrollSpeed, range: 0.3...3)
+                    Toggle("Natural scrolling", isOn: $naturalScroll)
                 }
 
                 Section {

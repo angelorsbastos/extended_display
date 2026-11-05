@@ -9,6 +9,9 @@ import SwiftUI
 struct LaptopTyping: View {
     let send: ([String: Any]) -> Void
     var focus: FocusState<Bool>.Binding
+    /// True while Ctrl / Alt / Win is held: letters and digits then go as key
+    /// presses (typed text can't make shortcuts like Ctrl + C).
+    var asKeys: () -> Bool = { false }
 
     static let baseline = " "
     @State private var typed = LaptopTyping.baseline
@@ -25,10 +28,13 @@ struct LaptopTyping: View {
                 if text == Self.baseline { return }
                 if text.count < Self.baseline.count {
                     Self.press(42, send: send)  // Backspace
-                } else if text.hasPrefix(Self.baseline) {
-                    send(["type": "type_text", "text": String(text.dropFirst(Self.baseline.count))])
                 } else {
-                    send(["type": "type_text", "text": text])
+                    let added = text.hasPrefix(Self.baseline) ? String(text.dropFirst(Self.baseline.count)) : text
+                    if asKeys(), let usages = Self.usages(added) {
+                        usages.forEach { Self.press($0, send: send) }
+                    } else {
+                        send(["type": "type_text", "text": added])
+                    }
                 }
                 typed = Self.baseline
             }
@@ -36,6 +42,22 @@ struct LaptopTyping: View {
                 Self.press(40, send: send)  // Enter
                 focus.wrappedValue = true   // keep typing
             }
+    }
+
+    /// a-z, 0-9 and space as HID key usages (for shortcuts), or nil if there's anything else.
+    static func usages(_ text: String) -> [Int]? {
+        var result: [Int] = []
+        for character in text.lowercased() {
+            guard let ascii = character.asciiValue else { return nil }
+            switch ascii {
+            case 97...122: result.append(Int(ascii) - 97 + 4)   // a -> 4 ... z -> 29
+            case 49...57: result.append(Int(ascii) - 49 + 30)   // 1 -> 30 ... 9 -> 38
+            case 48: result.append(39)                          // 0
+            case 32: result.append(44)                          // space
+            default: return nil
+            }
+        }
+        return result.isEmpty ? nil : result
     }
 
     /// Press and release one key (HID usage, like a real keyboard sends).

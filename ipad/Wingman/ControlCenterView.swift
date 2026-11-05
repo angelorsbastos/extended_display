@@ -130,7 +130,10 @@ struct ControlCenterView: View {
             HStack(alignment: .top, spacing: gap) {
                 VStack(spacing: gap) {
                     nowPlayingTile.frame(width: 2 * w + gap, height: h)
-                    keyboardTile.frame(width: 2 * w + gap, height: h)
+                    HStack(spacing: gap) {
+                        padTrackpadTile.frame(width: w, height: h)
+                        keyboardTile.frame(width: w, height: h)
+                    }
                     HStack(spacing: gap) {  // three small tiles in two columns' room
                         let third = (2 * w - gap) / 3
                         dockTile.frame(width: third, height: h)
@@ -239,18 +242,42 @@ struct ControlCenterView: View {
         })
     }
 
+    /// Ctrl+Alt+I from here: the laptop's own keyboard and touchpad drive this iPad.
     private var keyboardTile: some View {
         needsLaptop(Tile(style: model.laptopInput ? .on : .normal,
                          action: { model.setLaptopInput(!model.laptopInput) }) {
-            HStack(spacing: 14) {
-                Image(systemName: "keyboard")
-                    .font(.system(size: 26, weight: .semibold))
+            HStack(spacing: 12) {
+                Image(systemName: "laptopcomputer")
+                    .font(.system(size: 24, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Laptop keyboard and trackpad")
+                    Text("Laptop's keys here")
                         .font(.system(size: 15, weight: .semibold))
-                    Text(model.laptopInput ? "Typing on this iPad" : "Or Ctrl+Alt+I on the laptop")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text(model.laptopInput ? "On · Ctrl+Alt+I" : "Or Ctrl+Alt+I")
                         .font(.system(size: 12))
                         .foregroundStyle(model.laptopInput ? Theme.onText.opacity(0.65) : Theme.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+        })
+    }
+
+    /// The other way round: this iPad as the laptop's trackpad and keyboard.
+    private var padTrackpadTile: some View {
+        needsLaptop(Tile(action: { model.open(.trackpad) }) {
+            HStack(spacing: 12) {
+                Image(systemName: "rectangle.and.hand.point.up.left")
+                    .font(.system(size: 24, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Trackpad & keys")
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Text("Drive the laptop")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.secondary)
                 }
                 Spacer(minLength: 0)
             }
