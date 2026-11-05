@@ -118,9 +118,6 @@ targets:
         SWIFT_VERSION: "5.0"
         MARKETING_VERSION: "0.1"
         CURRENT_PROJECT_VERSION: "1"
-        # opening the app from the extension uses UIApplication through the
-        # responder chain, which App Store rules forbid but sideloading allows
-        APPLICATION_EXTENSION_API_ONLY: NO
     entitlements:
       path: WingmanShare/WingmanShare.entitlements
       properties:

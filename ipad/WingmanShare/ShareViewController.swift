@@ -116,14 +116,18 @@ final class ShareViewController: UIViewController {
         return formatter.string(from: Date())
     }
 
-    /// Open Wingman (wingman://send) through the responder chain: extensions
-    /// have no direct way to open their app.
+    /// Open Wingman (wingman://send). Extensions have no API to open their app,
+    /// and the compiler forbids UIApplication.open in them, so it's called by
+    /// its Objective-C name on the UIApplication found up the responder chain.
     private func openWingman() -> Bool {
         guard let url = URL(string: "wingman://send") else { return false }
+        let selector = NSSelectorFromString("openURL:options:completionHandler:")
         var responder: UIResponder? = self
         while let current = responder {
-            if let application = current as? UIApplication {
-                application.open(url, options: [:], completionHandler: nil)
+            if current is UIApplication, current.responds(to: selector) {
+                typealias Open = @convention(c) (NSObject, Selector, NSURL, NSDictionary, AnyObject?) -> Void
+                let open = unsafeBitCast(current.method(for: selector), to: Open.self)
+                open(current, selector, url as NSURL, NSDictionary(), nil)
                 return true
             }
             responder = current.next
