@@ -272,6 +272,7 @@ private struct KeyCap: View {
             if !pressing {
                 pressing = true
                 haptic()
+                keyClick()
                 onHold(true)
             }
             return
@@ -279,6 +280,7 @@ private struct KeyCap: View {
         if !pressing {
             pressing = true
             haptic()
+            keyClick()
             holdTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { _ in
                 if !variants.isEmpty {
                     popup = true

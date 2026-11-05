@@ -31,6 +31,8 @@ targets:
         UILaunchScreen: {}  # without this iOS shows the app letterboxed
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
+        # keeps running after leaving the app: Picture in Picture, the laptop's sound
+        UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations:  # iPhone: no upside-down
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

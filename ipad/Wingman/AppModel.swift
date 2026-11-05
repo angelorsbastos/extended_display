@@ -96,6 +96,8 @@ final class AppModel: ObservableObject {
     @Published var panelTab = PanelTab.controls
 
     let displayLayer = AVSampleBufferDisplayLayer()
+    /// Extend and Mirror keep playing in a small window after leaving the app.
+    let pictureInPicture = PictureInPicture()
     let clipboardHistory = ClipboardHistory()
     let dockTimer = DockTimer()  // here, so a timer keeps going after leaving the Dock
     let files = FileTransfers()
@@ -298,6 +300,7 @@ final class AppModel: ObservableObject {
             displayLayer.flushAndRemoveImage()
             input.active = true
             server.send(json: ["type": "start_video", "mode": mode.rawValue, "portrait": portrait])
+            pictureInPicture.attach(displayLayer)
         }
     }
 
@@ -307,6 +310,7 @@ final class AppModel: ObservableObject {
         }
         if case .video = screen {
             server.send(json: ["type": "stop_video"])
+            pictureInPicture.detach()
             displayLayer.flushAndRemoveImage()
         }
         input.active = false

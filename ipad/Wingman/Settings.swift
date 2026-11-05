@@ -1,3 +1,4 @@
+import AudioToolbox
 import SwiftUI
 import UIKit
 
@@ -26,6 +27,7 @@ enum Prefs {
     static let dockFade = "dock.fadeSeconds"
     // general
     static let haptics = "general.haptics"
+    static let keyClicks = "keyboard.clicks"
     static let quickButton = "general.quickButton"
 
     private static func value<T>(_ key: String, _ fallback: T) -> T {
@@ -54,11 +56,19 @@ enum Prefs {
     static var nightEndHour: Int { value(nightEnd, 7) }
     static var dockFadeSeconds: Double { value(dockFade, 6.0) }
     static var hapticsOn: Bool { value(haptics, true) }
+    static var keyClicksOn: Bool { value(keyClicks, true) }
 
     /// May the laptop connect this way at all (automatically or on a tap)?
     static func allows(_ transport: Transport) -> Bool {
         connectMode(transport) != "off"
     }
+}
+
+/// The keyboard's click (iOS's own key sound), for the on-screen laptop
+/// keyboard: iPads have no vibration, so this is how a key press is felt there.
+func keyClick() {
+    guard Prefs.keyClicksOn else { return }
+    AudioServicesPlaySystemSound(1104)
 }
 
 /// A light tap felt in the hand, unless haptics are switched off in Settings.
@@ -86,6 +96,7 @@ struct SettingsView: View {
     @AppStorage(Prefs.nightEnd) private var nightEnd = 7
     @AppStorage(Prefs.dockFade) private var dockFade = 6.0
     @AppStorage(Prefs.haptics) private var haptics = true
+    @AppStorage(Prefs.keyClicks) private var keyClicks = true
     @AppStorage(Prefs.quickButton) private var quickButton = true
     @State private var showingDetails = false
 
@@ -135,6 +146,7 @@ struct SettingsView: View {
                     LabeledSlider(title: "Pointer speed", value: $pointerSpeed, range: 0.8...5)
                     LabeledSlider(title: "Scrolling speed", value: $scrollSpeed, range: 0.3...3)
                     Toggle("Natural scrolling", isOn: $naturalScroll)
+                    Toggle("Key click sound", isOn: $keyClicks)
                 }
 
                 Section {
