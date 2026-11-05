@@ -18,11 +18,12 @@ over Wi-Fi, or from anywhere through Tailscale.
 
 **On the iPad**
 - **Extend**: the iPad becomes a second screen, with touch and keyboard.
-- **Mirror**: the laptop's screen on the iPad.
 - **Sound**: the laptop's audio plays on the iPad.
-- **A quick panel** over Extend and Mirror: shortcuts, controls and the clipboard.
 
 **On the iPad and the iPhone**
+- **Mirror**: the laptop's screen on the device, with touch.
+- **A quick panel** over Extend and Mirror (shortcuts, controls, the
+  clipboard) and a **keyboard button** to type into the laptop.
 - **Controls**: volume, brightness, music, dark mode, Wi-Fi and Bluetooth,
   power plans, keeping the laptop awake.
 - **Shortcuts**: one tap opens an app or website, runs a keyboard shortcut, or
@@ -33,7 +34,9 @@ over Wi-Fi, or from anywhere through Tailscale.
   health, live.
 - **Dock**: a desk clock for the device standing beside the laptop. It shows
   what's playing, a volume line, your shortcuts, a timer with an alarm, and a
-  red night mode.
+  red night mode. **Design your own Dock styles** in Settings (digital, flip or
+  analog clock; colours; a glow, the song's cover or a plain background; what
+  shows; the layout), and slide sideways on the Dock to switch between them.
 - **Trackpad** (iPhone): the phone drives the laptop's pointer and keyboard.
 
 **On the laptop**
@@ -41,10 +44,14 @@ over Wi-Fi, or from anywhere through Tailscale.
   iPad over Bluetooth, with the iPad's real trackpad gestures.
 - **On-screen indicators** for whatever the device changes (volume, music,
   files received…).
+- **A tray menu** listing the connected devices and how each is connected,
+  with Disconnect.
 
 **Connections:** the cable (fastest, pairs automatically), Wi-Fi (paired once
 with a 6-digit code, then encrypted), and **Tailscale** for when you're away
-from home. Settings in the app choose which ones are allowed.
+from home. You tap **Connect** and watch each stage (looking, found, pairing,
+securing, connected); in Settings each way can instead connect
+**automatically**, or be switched **off**.
 
 ---
 
@@ -100,33 +107,56 @@ Wingman doesn't work with a Mac laptop: the laptop side uses Windows features.
 
 ### 2. The iPad and iPhone
 
-1. **Install SideStore** with your Apple ID, following
-   [SideStore's guide](https://docs.sidestore.io). It's the free way to install
-   apps that aren't on the App Store. With a free Apple ID, apps have to be
-   refreshed in SideStore once a week.
-2. In SideStore, **Sources → +**, and add:
+SideStore is the free way to install apps that aren't on the App Store. Its
+[official guide](https://docs.sidestore.io) is the reference; in short:
+
+1. **On the device:** install **LocalDevVPN** from the App Store and connect
+   it. SideStore needs it whenever it installs, updates or refreshes apps.
+2. **On the laptop:** install [iloader](https://iloader.app), plug in the
+   device (unlocked; tap **Trust** if asked), sign in with your Apple ID and
+   install **SideStore**. If the stable version won't sign in, use **Nightly**.
+3. **On the device:**
+   1. **Settings → General → VPN & Device Management** → tap your Apple ID →
+      **Trust**.
+   2. **Settings → Privacy & Security → Developer Mode → On**; the device
+      restarts, then tap **Turn On**.
+   3. Open **SideStore**, give it the **pairing file** if it asks (iloader:
+      **Manage Pairing File**), and sign in with the same Apple ID. If anything
+      goes wrong here, see [Troubleshooting](#troubleshooting).
+4. In SideStore, **Sources → +**, and add:
    ```
    https://github.com/angelorsbastos/wingman/releases/latest/download/source.json
    ```
-3. Install **Wingman** from that source and open it. Allow **Local Network**
+5. Install **Wingman** from that source and open it. Allow **Local Network**
    when it asks: that's how the laptop finds it on Wi-Fi.
+6. **Once a week**, with LocalDevVPN connected, open SideStore and tap
+   **Refresh All**. Apps signed with a free Apple ID stop opening after 7 days
+   otherwise (nothing is lost: refresh and they work again).
 
 SideStore signs the app with *your* Apple ID, and pairing is per device: your
 copy only ever talks to your own laptop.
 
 ### 3. Connect
 
+Make sure Wingman is running on the laptop (its icon is in the tray), open
+Wingman on the device and tap **Connect**. The card shows each stage as it
+happens, and what to check if it gets stuck.
+
 1. **The first time, use the cable.** Plug the iPad (or iPhone) into the
-   laptop, tap **Trust** on the device if asked, and open Wingman. It connects
-   and pairs by itself.
-2. **From then on, Wi-Fi works too.** With both on the same Wi-Fi, just open
-   Wingman. To pair over Wi-Fi without the cable, type the 6-digit code the
+   laptop, tap **Trust** on the device if asked, and tap **Connect**. It pairs
+   by itself.
+2. **From then on, Wi-Fi works too.** With both on the same Wi-Fi, tap
+   **Connect**. To pair over Wi-Fi without the cable, type the 6-digit code the
    laptop shows. Guest networks often block devices from seeing each other;
    use the cable or Tailscale there.
 3. **Away from home** (optional): install [Tailscale](https://tailscale.com) on
-   the laptop and the device, signed in to the same account. Wingman finds the
-   device through it by itself. On iOS only one VPN runs at a time, so turn
-   Tailscale off for SideStore's weekly refresh if SideStore needs its own.
+   the laptop and the device, signed in to the same account, and tap
+   **Connect**.
+4. **Don't want to tap Connect every time?** In **Settings → Connection**, set
+   the ways you use to **Automatic**. **Off** ignores a way completely.
+
+To disconnect: the plug button at the top of the home screen → **Disconnect**,
+or on the laptop, the tray icon → your device → **Disconnect**.
 
 ### 4. Ctrl+Alt+I (the laptop's keyboard and touchpad on the iPad)
 
@@ -137,6 +167,57 @@ copy only ever talks to your own laptop.
 3. Type, point, click, scroll, and swipe with three or four fingers like on
    an iPad trackpad. A plugged-in mouse works too. **Ctrl+Alt+I** again brings
    everything back to the laptop.
+
+---
+
+## Troubleshooting
+
+**SideStore: signing in fails with error -80045.** Apple changed its login
+checks and SideStore's default settings fail them. In **SideStore →
+Settings**, with LocalDevVPN connected:
+1. **User Customizations** → turn **off** *On-Device Anisette* (restart the app
+   if it asks).
+2. **Anisette Servers** → choose **SideStore (New)**, then scroll down and turn
+   **off** *Enable Auto Rotation*.
+3. **User Customizations → Anisette Client Configuration** → under **Remote
+   Server Sync** tap **Fetch**, then **Save as Overrides**.
+4. Back in **User Customizations**, tap **Reset adi.pb**.
+5. Sign in again; it can take a little longer than usual.
+
+**SideStore: "session expired" (or updates fail) on one device.** When two
+devices use the same Apple ID, signing in on one can end the other's session.
+On the device that complains: connect **LocalDevVPN**, then **SideStore →
+Settings → Sign Out**, and **Sign In** again (with the -80045 fix above if that
+error appears).
+
+**SideStore says the pairing file is missing or wrong** (for example
+"Device registration error"), even after iloader placed it. Some SideStore
+versions don't recognise it. Make one with
+[idevice_pair](https://github.com/jkcoxson/idevice_pair/releases):
+1. Device plugged in and unlocked: open idevice_pair, pick the device, choose
+   **Remote Pairing**, create the file, **Validate** it and **save** the
+   `.plist`.
+2. Get it onto the device (iCloud Drive or OneDrive → **Files** → move it to
+   **On My iPad / iPhone**).
+3. In SideStore, choose the pairing file and pick it.
+4. Delete the cloud copy afterwards: a pairing file is a key to your device.
+
+**SideStore stopped working after Tailscale was switched on.** iOS runs one
+VPN at a time. SideStore needs **LocalDevVPN**; Wingman away from home needs
+**Tailscale**. Switch to LocalDevVPN to refresh or update, then back.
+
+**After a big iOS update, SideStore asks for a pairing file again.** Make a new
+one with idevice_pair, as above.
+
+**Wingman doesn't connect.**
+- Is Wingman running on the laptop? Its tray icon's tooltip says what it's
+  doing.
+- Cable: is **Apple Devices** installed, and did the device **Trust** the
+  laptop?
+- Wi-Fi: same network (not a guest network), and **Local Network** allowed for
+  Wingman in the device's Settings → Privacy & Security.
+- Check **Settings → Connection** in the app: a way set to **Off** never
+  connects.
 
 ---
 
