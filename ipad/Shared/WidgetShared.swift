@@ -30,8 +30,28 @@ struct WidgetSnapshot: Codable, Equatable {
     /// AltStore) gives it a name of its own for each Apple ID and writes that
     /// name into the Info.plist as ALTAppGroups.
     static var appGroup: String {
-        (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String])?.first
-            ?? "group.dev.extenddisplay.app"
+        let candidates = groupCandidates
+        return candidates.first {
+            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil
+        } ?? candidates[0]
+    }
+
+    /// The names the group may have. SideStore adds the Apple ID's team code
+    /// to the app's ids (dev.extenddisplay.app.H7GAWB62V8, and .widgets /
+    /// .share for the extensions) and to the group the same way, without
+    /// always saying so in ALTAppGroups; iOS only grants the real one.
+    private static var groupCandidates: [String] {
+        var names = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String]) ?? []
+        let base = "dev.extenddisplay.app"
+        var id = Bundle.main.bundleIdentifier ?? base
+        for suffix in [".widgets", ".share"] where id.hasSuffix(suffix) {
+            id.removeLast(suffix.count)  // an extension: its app's id
+        }
+        if id != base {
+            names.append("group." + id)  // group.dev.extenddisplay.app.TEAMCODE
+        }
+        names.append("group." + base)
+        return names
     }
 
     static var shared: UserDefaults? { UserDefaults(suiteName: appGroup) }
