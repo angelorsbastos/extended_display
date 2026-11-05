@@ -24,6 +24,14 @@ over Wi-Fi, or from anywhere through Tailscale.
 - **Mirror**: the laptop's screen on the device, with touch.
 - **A quick panel** over Extend and Mirror (shortcuts, controls, the
   clipboard) and a **keyboard button** to type into the laptop.
+- **Picture in Picture**: leave Wingman during Extend or Mirror and the
+  laptop's screen keeps playing in a small floating window (watch only).
+- **Widgets** (iOS 18+): the laptop's battery, temperature and song, and your
+  shortcuts, on the Home Screen, Lock Screen and in StandBy. They show what
+  Wingman last saw; a shortcut opens Wingman and runs it.
+- **Control Center buttons** (iOS 18+): lock the laptop, play/pause.
+- **Share → Wingman**: photos, screenshots and files from any app go to the
+  laptop's Downloads.
 - **Controls**: volume, brightness, music, dark mode, Wi-Fi and Bluetooth,
   power plans, keeping the laptop awake.
 - **Shortcuts**: one tap opens an app or website, runs a keyboard shortcut, or
@@ -37,7 +45,12 @@ over Wi-Fi, or from anywhere through Tailscale.
   red night mode. **Design your own Dock styles** in Settings (digital, flip or
   analog clock; colours; a glow, the song's cover or a plain background; what
   shows; the layout), and slide sideways on the Dock to switch between them.
-- **Trackpad** (iPhone): the phone drives the laptop's pointer and keyboard.
+- **The Dock timer as a Live Activity**: on the Lock Screen and in the
+  iPhone's Dynamic Island, counting down even with Wingman closed.
+- **Trackpad and keyboard**: the device drives the laptop's pointer and
+  keyboard. On the iPad it's a laptop deck: a Portuguese Windows keyboard
+  (flick down for a key's second character, hold for accents and symbols, real
+  Ctrl / Shift / Alt / Win) beside a trackpad you can hide.
 
 **On the laptop**
 - **Ctrl+Alt+I**: the laptop's own keyboard, touchpad and mouse control the
