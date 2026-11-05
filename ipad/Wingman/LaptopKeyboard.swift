@@ -21,6 +21,9 @@ struct DeckKey: Identifiable {
     var variants: [String] = []
     var role: Role = .character
     var repeats = false
+    /// The tall Portuguese Enter is two keys that touch: the top one joins down.
+    var joinsDown = false
+    var joinsUp = false
 
     static func char(_ label: String, _ usage: Int, flick: String? = nil, hold: [String] = []) -> DeckKey {
         DeckKey(id: "c\(usage)", label: label, usage: usage, flick: flick, variants: hold)
@@ -48,12 +51,13 @@ struct DeckKey: Identifiable {
          char("t", 23), char("y", 28), char("u", 24, flick: "ú", hold: ["ú", "ù", "û", "ü"]),
          char("i", 12, flick: "í", hold: ["í", "ì", "î"]), char("o", 18, flick: "ó", hold: ["ó", "ò", "ô", "õ"]),
          char("p", 19), char("+", 47, flick: "*", hold: ["¨"]), char("´", 48, flick: "`"),
-         action("Del", icon: "delete.right", usage: 76, width: 1.5, repeats: true)],
+         DeckKey(id: "enterTop", label: "", usage: 40, width: 1.5, role: .action, joinsDown: true)],
         [DeckKey(id: "caps", label: "Caps", icon: "capslock", width: 1.75, role: .capsLock),
          char("a", 4, flick: "á", hold: ["á", "à", "â", "ã"]), char("s", 22), char("d", 7), char("f", 9),
          char("g", 10), char("h", 11), char("j", 13), char("k", 14), char("l", 15), char("ç", 51),
          char("º", 52, flick: "ª"), char("~", 50, flick: "^"),
-         action("Enter", icon: "return", usage: 40, width: 1.25)],
+         DeckKey(id: "enter", label: "Enter", icon: "return", usage: 40, width: 1.25, role: .action,
+                 joinsUp: true)],
         [DeckKey(id: "lshift", label: "Shift", icon: "shift", width: 1.25, role: .shift),
          char("<", 100, flick: ">"), char("z", 29), char("x", 27), char("c", 6, hold: ["ç"]), char("v", 25),
          char("b", 5), char("n", 17, hold: ["ñ"]), char("m", 16), char(",", 54, flick: ";"),
@@ -72,15 +76,17 @@ struct DeckKey: Identifiable {
 
 /// A Windows keyboard for the laptop with the iPad's touches: flick down on a
 /// key for its small character, hold a key for its variants (à â ã, €, @...),
-/// tap Shift for one capital and double-tap it (or Caps) to lock; hold Delete
-/// or an arrow to repeat. Ctrl, Win, Alt and AltGr stay held while lit.
+/// hold Delete or an arrow to repeat. Ctrl, Shift, Win, Alt and AltGr work
+/// like real keys: down while touched (hold Ctrl with one finger, tap C with
+/// another). Caps is the real Caps Lock.
 struct LaptopKeyboard: View {
     let send: ([String: Any]) -> Void
 
-    enum ShiftState { case off, once, locked }
-    @State private var held: Set<Int> = []
-    @State private var shift: ShiftState = .off
-    @State private var lastShiftTap = Date.distantPast
+    /// Modifier keys under a finger right now (HID usages; Shift is 225).
+    @State private var held: [String: Int] = [:]
+    @State private var capsOn = false
+
+    private var shifted: Bool { held.values.contains(225) || capsOn }
 
     var body: some View {
         GeometryReader { geometry in
@@ -109,19 +115,24 @@ struct LaptopKeyboard: View {
                        onTap: { press(81) })
             }
         case .modifier:
-            KeyCap(label: key.label, icon: key.icon, lit: held.contains(key.usage), special: true,
-                   width: width, height: height, onTap: { toggle(key.usage) })
+            KeyCap(label: key.label, icon: key.icon, lit: held[key.id] != nil, special: true,
+                   width: width, height: height, onTap: {}, onHold: { hold(key, $0) })
         case .shift:
-            KeyCap(label: key.label, icon: shift == .locked ? "shift.fill" : key.icon, lit: shift != .off,
-                   special: true, width: width, height: height, onTap: { tapShift() })
+            KeyCap(label: key.label, icon: key.icon, lit: held[key.id] != nil, special: true,
+                   width: width, height: height, onTap: {},
+                   onHold: { hold(DeckKey(id: key.id, label: "", usage: 225), $0) })
         case .capsLock:
-            KeyCap(label: key.label, icon: key.icon, lit: shift == .locked, special: true,
-                   width: width, height: height, onTap: { shift = shift == .locked ? .off : .locked })
+            KeyCap(label: key.label, icon: capsOn ? "capslock.fill" : key.icon, lit: capsOn, special: true,
+                   width: width, height: height, onTap: {
+                       LaptopTyping.press(57, send: send)  // the laptop's own Caps Lock
+                       capsOn.toggle()
+                   })
         case .action:
             KeyCap(label: key.label, icon: key.icon, repeats: key.repeats, special: true,
+                   joinsDown: key.joinsDown, joinsUp: key.joinsUp,
                    width: width, height: height, onTap: { press(key.usage) })
         case .character:
-            KeyCap(label: shift != .off ? key.label.uppercased() : key.label, flick: key.flick,
+            KeyCap(label: shifted ? key.label.uppercased() : key.label, flick: key.flick,
                    variants: key.variants, width: width, height: height,
                    onTap: { press(key.usage) }, onText: { type($0) })
         }
@@ -129,52 +140,31 @@ struct LaptopKeyboard: View {
 
     // MARK: sending
 
-    /// Press and release a key; Shift goes down around it when it's on.
+    /// Press and release a key (any modifier held down applies, as on a real keyboard).
     private func press(_ usage: Int) {
-        let shifted = shift != .off
-        if shifted { send(["type": "key", "usage": 225, "down": true]) }
         LaptopTyping.press(usage, send: send)
-        if shifted {
-            send(["type": "key", "usage": 225, "down": false])
-            if shift == .once { shift = .off }
-        }
     }
 
-    /// A flicked or held character: typed as text (capital when Shift is on).
+    /// A flicked or held character: typed as text (capital with Shift or Caps).
     private func type(_ text: String) {
-        send(["type": "type_text", "text": shift != .off ? text.uppercased() : text])
-        if shift == .once { shift = .off }
+        send(["type": "type_text", "text": shifted ? text.uppercased() : text])
     }
 
-    private func toggle(_ usage: Int) {
-        if held.contains(usage) {
-            held.remove(usage)
-            send(["type": "key", "usage": usage, "down": false])
+    /// A modifier touched (down) or let go (up).
+    private func hold(_ key: DeckKey, _ down: Bool) {
+        if down {
+            held[key.id] = key.usage
         } else {
-            held.insert(usage)
-            send(["type": "key", "usage": usage, "down": true])
+            held[key.id] = nil
         }
-    }
-
-    /// Tap: one capital. Two quick taps: locked. Tap again: off.
-    private func tapShift() {
-        let now = Date()
-        if shift == .locked {
-            shift = .off
-        } else if now.timeIntervalSince(lastShiftTap) < 0.35 {
-            shift = .locked
-        } else {
-            shift = shift == .once ? .off : .once
-        }
-        lastShiftTap = now
+        send(["type": "key", "usage": key.usage, "down": down])
     }
 
     private func releaseAll() {
-        for usage in held {
+        for usage in held.values {
             send(["type": "key", "usage": usage, "down": false])
         }
         held.removeAll()
-        shift = .off
     }
 }
 
@@ -190,10 +180,14 @@ private struct KeyCap: View {
     var repeats = false
     var lit = false
     var special = false
+    var joinsDown = false
+    var joinsUp = false
     let width: CGFloat
     let height: CGFloat
     let onTap: () -> Void
     var onText: (String) -> Void = { _ in }
+    /// Modifier keys: down when the finger lands, up when it lifts (no tap).
+    var onHold: ((Bool) -> Void)? = nil
 
     @State private var pressing = false
     @State private var travel: CGSize = .zero
@@ -220,7 +214,9 @@ private struct KeyCap: View {
             face
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(gap / 2)
+        .padding(.horizontal, gap / 2)
+        .padding(.top, joinsUp ? -1 : gap / 2)       // the tall Enter's two halves touch
+        .padding(.bottom, joinsDown ? -1 : gap / 2)
         .frame(width: width, height: height)
         .overlay(alignment: .bottomLeading) {
             if popup {
@@ -272,6 +268,14 @@ private struct KeyCap: View {
     }
 
     private func changed(_ value: DragGesture.Value) {
+        if let onHold {
+            if !pressing {
+                pressing = true
+                haptic()
+                onHold(true)
+            }
+            return
+        }
         if !pressing {
             pressing = true
             haptic()
@@ -297,6 +301,11 @@ private struct KeyCap: View {
     }
 
     private func ended(_ value: DragGesture.Value) {
+        if let onHold {
+            pressing = false
+            onHold(false)
+            return
+        }
         holdTimer?.invalidate()
         repeatTimer?.invalidate()
         if popup {
