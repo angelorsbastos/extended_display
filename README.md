@@ -62,7 +62,7 @@ securing, connected); in Settings each way can instead connect
 | **Laptop** | Windows 11 (made and tested on it; Windows 10 may mostly work but is untested). An ASUS laptop for the temperatures and fans on the Dashboard; a Precision touchpad (most modern laptops) for Ctrl+Alt+I's real trackpad gestures. |
 | **iPad / iPhone** | iPadOS / iOS 16 or newer. |
 | **Free accounts** | An Apple ID (to sign the app with SideStore). Optional: Tailscale, for use away from home. |
-| **Free software** | Python 3.12 or newer, Apple Devices, the Parsec Virtual Display Driver, SideStore (all explained below). |
+| **Free software** | Apple Devices, the Parsec Virtual Display Driver, SideStore (all explained below). No Python needed with the installer. |
 
 Wingman doesn't work with a Mac laptop: the laptop side uses Windows features.
 
@@ -72,38 +72,60 @@ Wingman doesn't work with a Mac laptop: the laptop side uses Windows features.
 
 ### 1. The laptop
 
-1. **Install Python** 3.12 or newer from [python.org](https://www.python.org/downloads/).
-   During setup, tick **Add python.exe to PATH**.
-2. **Download Wingman**: on this page, **Code → Download ZIP**, and unzip it
-   somewhere permanent (for example `Documents\Wingman`). Or with git:
+1. **Download [Wingman-Setup.exe](https://github.com/angelorsbastos/wingman/releases/download/windows/Wingman-Setup.exe)**
+   and run it. Windows may say *"Windows protected your PC"*, because the
+   installer isn't signed with a paid certificate: click **More info → Run
+   anyway**.
+2. In the installer, choose what you'd like:
+   - **Desktop icon**, and **Send to → iPad (Wingman)** in Explorer's
+     right-click menu.
+   - **The iPad 10's screen size** for Extend. Leave it off for another iPad
+     (see *Another iPad model* below).
+3. On the last page, the installer offers the two free drivers, but only the
+   ones your laptop is missing:
+   - **Apple Devices** (Microsoft Store): the USB service the cable connection
+     needs. iTunes works too.
+   - **The Parsec Virtual Display Driver**: it lets Wingman add a screen for
+     Extend. Use the driver installer linked on that page; Wingman controls
+     it.
+4. **Start Wingman** (the installer can do it). It runs quietly in the system
+   tray, bottom right; quit it from the tray icon.
+
+**Another iPad model:** Extend uses the iPad's exact screen size. Download
+[`pc/ipad-resolution.reg`](pc/ipad-resolution.reg), open it in Notepad, change
+the two numbers and double-click it (needs admin). They're hexadecimal, so
+Windows' Calculator in Programmer mode can convert them. For example, iPad Pro
+11": 2388 × 1668 → `954` × `684`; iPad Pro 12.9": 2732 × 2048 → `aac` × `800`.
+
+**Updating:** run the newest `Wingman-Setup.exe` (same link). Your pairings and
+shortcuts are kept: they live in `%APPDATA%\Wingman`.
+
+<details>
+<summary><b>Running from the source code instead</b> (for developers)</summary>
+
+1. Install **Python** 3.12 or newer from [python.org](https://www.python.org/downloads/)
+   (tick **Add python.exe to PATH**), and clone the project:
    ```bash
    git clone https://github.com/angelorsbastos/wingman.git
    ```
-3. **Install its packages.** Open a terminal in that folder and run, one at a time:
+2. In that folder, one at a time:
    ```bash
    python -m venv .venv
    ```
    ```bash
    .venv\Scripts\pip install -r requirements.txt
    ```
-4. **Install Apple Devices** from the Microsoft Store (or iTunes). It provides
-   the USB service the cable connection needs.
-5. **Install the Parsec Virtual Display Driver**, which lets Wingman add a
-   screen for Extend. Use the driver installer linked from
-   [nomi-san/parsec-vdd](https://github.com/nomi-san/parsec-vdd). You only
-   need the driver itself; Wingman controls it.
-6. **Give Extend your iPad's exact resolution.** Double-click
-   `pc\ipad-resolution.reg` and accept (needs admin). It's set for the iPad 10
-   (2360 × 1640). For another iPad, first open the file in Notepad and change
-   the two numbers. They're hexadecimal, so Windows' Calculator in Programmer
-   mode can convert them. For example, iPad Pro 11": 2388 × 1668 → `954` × `684`;
-   iPad Pro 12.9": 2732 × 2048 → `aac` × `800`.
-7. **Create the Wingman shortcuts**: right-click `pc\make_shortcuts.ps1` →
-   **Run with PowerShell**. This adds *Wingman* to the Start menu and the
-   desktop, plus *Send to → iPad (Wingman)* in Explorer's right-click menu.
-8. **Start Wingman** from the Start menu. It runs quietly in the system tray
-   (bottom right); quit it from the tray icon. If Windows Firewall asks, allow
-   it on **private** networks, so the iPad can be found on Wi-Fi.
+3. Install Apple Devices and the Parsec driver as above, and double-click
+   `pc\ipad-resolution.reg` for the iPad 10's screen size.
+4. Right-click `pc\make_shortcuts.ps1` → **Run with PowerShell** for the Start
+   menu, desktop and Send to shortcuts, then start Wingman from the Start menu.
+   Run this way, Wingman keeps its files in `pc\`.
+5. To build the installer yourself:
+   `.venv\Scripts\python.exe -m PyInstaller packaging\wingman.spec --noconfirm`,
+   then compile `packaging\wingman.iss` with [Inno Setup](https://jrsoftware.org/isinfo.php).
+   GitHub does both on every push (`.github/workflows/build-windows.yml`).
+
+</details>
 
 ### 2. The iPad and iPhone
 
@@ -225,9 +247,11 @@ one with idevice_pair, as above.
 
 - **The app:** SideStore shows *Update available* whenever a new version is
   built; tap **Update**.
-- **The laptop:** download the project again (or `git pull`), keeping your
-  `pc\shortcuts.user.json` and `pc\pairings.json`. Then quit Wingman from the
-  tray and start it again.
+- **The laptop:** run the newest
+  [Wingman-Setup.exe](https://github.com/angelorsbastos/wingman/releases/download/windows/Wingman-Setup.exe);
+  it closes Wingman, updates it, and keeps your pairings and shortcuts. From
+  the source code: `git pull`, then quit Wingman from the tray and start it
+  again.
 
 ## Build your own copy
 
@@ -277,7 +301,8 @@ free Mac at the time: re-run it later. If it keeps happening, switch
 |---|---|
 | `pc/` | The laptop hub: `tray.py` starts it; `hub.py` is the core; one file per feature (`audio.py`, `controls.py`, `files.py`, `ipad_control.py`, …). |
 | `ipad/` | The iPad and iPhone app (SwiftUI); `project.yml` describes the Xcode project. |
-| `.github/workflows/` | The cloud build that publishes the app for SideStore. |
+| `.github/workflows/` | The cloud builds: the app for SideStore, and the Windows installer. |
+| `packaging/` | How the laptop side becomes `Wingman.exe` (PyInstaller) and `Wingman-Setup.exe` (Inno Setup). |
 | `video/` | The showcase video's source. |
 | `docs/` | The video and the picture at the top of this page. |
 

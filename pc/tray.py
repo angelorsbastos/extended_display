@@ -1,7 +1,11 @@
 """Run the hub in the background with a tray icon (no terminal window).
 
 This is what the "Wingman" desktop / Start menu shortcut starts, using
-pythonw.exe. Output goes to pc/hub.log. Quit from the tray icon's menu.
+pythonw.exe, or Wingman.exe when installed. Output goes to hub.log (see
+paths.py for where). Quit from the tray icon's menu.
+
+Wingman.exe --send FILE ... is Explorer's "Send to > iPad (Wingman)" when
+installed: it hands the files to the running hub (sendfile.py) and exits.
 """
 import ctypes
 import faulthandler
@@ -11,8 +15,14 @@ import sys
 import threading
 import time
 
-HERE = pathlib.Path(__file__).parent
-LOG = HERE / "hub.log"
+import paths  # noqa: E402
+
+if sys.argv[1:2] == ["--send"]:
+    import sendfile
+    sendfile.main(sys.argv[2:])
+    sys.exit()
+
+LOG = paths.DATA / "hub.log"
 
 # pythonw has no console: send prints and errors to a log file instead
 sys.stdout = sys.stderr = open(LOG, "a", encoding="utf-8", buffering=1)
@@ -26,7 +36,7 @@ from PIL import Image  # noqa: E402
 
 import hub  # noqa: E402
 
-ICON = HERE / "assets" / "icon.png"
+ICON = paths.CODE / "assets" / "icon.png"
 MUTEX_NAME = "WingmanHub"
 ERROR_ALREADY_EXISTS = 183
 

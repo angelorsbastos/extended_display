@@ -859,13 +859,10 @@ def set_up_link(session, on_status, devices):
     AlreadyConnected if that device is already served another way."""
     pairing_paused_until = devices.paused_until
     session.sock.settimeout(3 if session.transport != "remote" else 10)  # internet is slower
-    try:
-        identity = session.recv_json()
-    except socket.timeout:
-        if session.transport != "usb":
-            raise
-        identity = None  # an app version from before Wi-Fi support: the cable is enough
-    if identity is not None and identity.get("type") != "identity":
+    # every app version says who it is first; one that stays silent (e.g. the app
+    # suspended in the background) isn't ready: give up and try again later
+    identity = session.recv_json()
+    if identity.get("type") != "identity":
         raise OSError(f"expected identity, got {identity.get('type')}")
 
     if identity:
@@ -918,6 +915,12 @@ def serve(session, on_status, devices):
         set_up_link(session, on_status, devices)
     except AlreadyConnected:
         session.close()  # quietly: it's connected already, another way
+        return
+    except socket.timeout:
+        # the app is there but silent (e.g. suspended in the background): quietly
+        # try again in a few seconds
+        devices.paused_until[session.key] = time.time() + 5
+        session.close()
         return
     except secure.NeedsPairing:
         on_status("The iPad no longer knows this laptop (app reinstalled?). Pairing again…")

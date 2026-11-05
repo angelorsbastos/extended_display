@@ -4,8 +4,9 @@ import json
 import pathlib
 
 import monitors
+import paths
 
-LAYOUT_FILE = pathlib.Path(__file__).parent / "extend_layout.json"
+LAYOUT_FILE = paths.DATA / "extend_layout.json"
 
 
 def setup_key(exclude=None):

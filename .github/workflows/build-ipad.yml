@@ -85,7 +85,8 @@ jobs:
           python3 make_source.py "$VERSION" "$BUILD" Wingman.ipa "$url" source.json
           # SideStore reads the "latest" release; never let an older build that
           # finished late (e.g. a re-run) take that over from a newer one
-          newest=$(gh release list --limit 100 --json tagName --jq '[.[].tagName | ltrimstr("build-") | tonumber] | max // 0')
+          # (only build-N tags: the Windows installer has its own "windows" release)
+          newest=$(gh release list --limit 100 --json tagName --jq '[.[].tagName | select(startswith("build-")) | ltrimstr("build-") | tonumber] | max // 0')
           latest=true
           if [ "$newest" -gt "$BUILD" ]; then latest=false; fi
           gh release create "$tag" Wingman.ipa source.json \

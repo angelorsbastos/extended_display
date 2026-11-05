@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+import paths
 
 user32 = ctypes.windll.user32
 KEYEVENTF_KEYUP = 0x2
@@ -16,8 +17,8 @@ KEYS = {"win": 0x5B, "ctrl": 0x11, "shift": 0x10, "alt": 0x12, "tab": 0x09, "esc
 MEDIA_KEYS = {"play_pause": 0xB3, "next": 0xB0, "previous": 0xB1,
               "volume_up": 0xAF, "volume_down": 0xAE, "mute": 0xAD}
 
-SHORTCUTS_FILE = pathlib.Path(__file__).parent / "shortcuts.json"  # defaults, in git
-USER_SHORTCUTS_FILE = pathlib.Path(__file__).parent / "shortcuts.user.json"  # edited on the iPad
+SHORTCUTS_FILE = paths.CODE / "shortcuts.json"  # defaults, in git
+USER_SHORTCUTS_FILE = paths.DATA / "shortcuts.user.json"  # edited on the iPad
 MAX_SHORTCUTS = 60
 
 

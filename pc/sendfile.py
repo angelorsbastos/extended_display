@@ -3,7 +3,7 @@ selected files as arguments. It hands them to the running hub (files.py, the
 outbox), which sends them to the iPad. Problems are shown in a message box,
 since there's no window otherwise.
 
-Usage: pythonw sendfile.py FILE [FILE ...]
+Usage: pythonw sendfile.py FILE [FILE ...]   (installed: Wingman.exe --send FILE ...)
 """
 import ctypes
 import json
@@ -15,8 +15,8 @@ from files import OUTBOX_PORT
 MB_ICONWARNING = 0x30
 
 
-def main():
-    paths = sys.argv[1:]
+def main(paths=None):
+    paths = sys.argv[1:] if paths is None else paths
     if not paths:
         return
     try:
