@@ -131,25 +131,34 @@ struct DockFace: View {
             VStack(alignment: alignment, spacing: 4) {
                 EqualizerBars(playing: playing.playing, color: accent)
                     .padding(.bottom, 6)
+                let centred = alignment == .center
                 HStack(alignment: .center, spacing: phone ? 12 : 20) {
                     Text(playing.title)
                         .font(.system(size: phone ? 19 : 28, weight: .semibold))
                         .lineLimit(2)
-                        .multilineTextAlignment(alignment == .center ? .center : .leading)
-                    if style.showVolume, model.controls?.volume != nil {
-                        if alignment == .leading { Spacer(minLength: 0) }
-                        DockVolume(model: model, color: accent)
-                            .frame(width: phone ? 72 : 120)
-                            .allowsHitTesting(!preview)
+                        .multilineTextAlignment(centred ? .center : .leading)
+                    // beside the title when it's on the left; centred, it would push the title off-centre
+                    if !centred, style.showVolume, model.controls?.volume != nil {
+                        Spacer(minLength: 0)
+                        volumeLine
                     }
                 }
                 Text(playing.artist.isEmpty ? playing.app : playing.artist)
                     .font(.system(size: phone ? 14 : 18))
                     .foregroundStyle(dim)
                     .lineLimit(1)
+                if centred, style.showVolume, model.controls?.volume != nil {
+                    volumeLine  // its own row under the artist, in the middle
+                }
             }
             .animation(.easeInOut(duration: 0.6), value: playing.title)
         }
+    }
+
+    private var volumeLine: some View {
+        DockVolume(model: model, color: accent)
+            .frame(width: phone ? 72 : 120)
+            .allowsHitTesting(!preview)
     }
 
     /// The chosen shortcuts in a grid filling `width`: tiles grow with the room.
