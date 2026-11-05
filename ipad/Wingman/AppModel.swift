@@ -270,6 +270,9 @@ final class AppModel: ObservableObject {
         case "dock":
             open(.dock)
             return
+        case "send":  // the share extension saved something for the laptop
+            collectOutbox()
+            return
         default:
             return
         }
@@ -292,6 +295,24 @@ final class AppModel: ObservableObject {
         case .media(let action):
             media(action)
         }
+    }
+
+    /// Files the share extension saved (Share > Wingman): send them (or keep
+    /// them until the laptop connects), then clear the outbox.
+    func collectOutbox() {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: WidgetSnapshot.appGroup) else { return }
+        let outbox = container.appendingPathComponent("Outbox", isDirectory: true)
+        guard let folders = try? FileManager.default.contentsOfDirectory(at: outbox, includingPropertiesForKeys: nil),
+              !folders.isEmpty else { return }
+        let items = folders.flatMap {
+            (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
+        }
+        if !items.isEmpty {
+            openShared(items)  // makes its own copies to send
+            if !connected && !wantsConnection { connect() }  // sharing means "send it now"
+        }
+        folders.forEach { try? FileManager.default.removeItem(at: $0) }
     }
 
     /// Save what the widgets show (only when it changed) and let them redraw.
@@ -521,6 +542,7 @@ final class AppModel: ObservableObject {
     /// The app is in front again (SceneDelegate).
     func appBecameActive() {
         refreshNetworkInfo()  // e.g. joined another Wi-Fi meanwhile
+        collectOutbox()  // shared while the app couldn't be opened
         sendClipboardIfChanged()
         // the decoder may have been shut down while we were away; a keyframe
         // brings the picture back even if nothing on the laptop screen changes

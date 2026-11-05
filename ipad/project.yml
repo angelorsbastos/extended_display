@@ -12,6 +12,7 @@ targets:
     scheme: {}
     dependencies:
       - target: WingmanWidgets  # embedded in the app (PlugIns)
+      - target: WingmanShare
     # shared with the extensions (what the widgets show); SideStore renames it
     # per Apple ID and says the real name in ALTAppGroups (WidgetSnapshot.appGroup)
     entitlements:
@@ -103,3 +104,38 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  # Share > Wingman: saves photos, screenshots and files in the app group's
+  # outbox and opens the app, which sends them to the laptop.
+  WingmanShare:
+    type: app-extension
+    platform: iOS
+    sources: [WingmanShare, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.extenddisplay.app.share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        # opening the app from the extension uses UIApplication through the
+        # responder chain, which App Store rules forbid but sideloading allows
+        APPLICATION_EXTENSION_API_ONLY: NO
+    entitlements:
+      path: WingmanShare/WingmanShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.extenddisplay.app]
+    info:
+      path: WingmanShare/Info.plist
+      properties:
+        CFBundleDisplayName: Wingman
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 20
+              NSExtensionActivationSupportsMovieWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 20
