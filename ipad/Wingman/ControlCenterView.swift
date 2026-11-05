@@ -152,8 +152,8 @@ struct ControlCenterView: View {
             HStack(spacing: gap) {
                 trackpadTile.frame(width: w, height: 2 * h + gap)
                 VStack(spacing: gap) {
+                    mirrorTile.frame(width: w, height: h)
                     dockTile.frame(width: w, height: h)
-                    soundTile.frame(width: w, height: h)
                 }
             }
             nowPlayingTile.frame(width: width, height: h)
@@ -163,8 +163,10 @@ struct ControlCenterView: View {
             }
             shortcutsTile(columns: 4).frame(width: width, height: 2 * h + gap)
             HStack(spacing: gap) {
-                clipboardTile.frame(width: w, height: h)
-                filesTile.frame(width: w, height: h)
+                let third = (width - 2 * gap) / 3
+                soundTile.frame(width: third, height: h)
+                clipboardTile.frame(width: third, height: h)
+                filesTile.frame(width: third, height: h)
             }
         }
     }

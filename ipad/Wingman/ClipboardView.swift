@@ -52,8 +52,9 @@ struct QuickPanel: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(22)
-            .frame(width: 420)
+            .padding(isPhone ? 16 : 22)
+            // a side panel on the iPad; on the iPhone, as wide as the screen allows
+            .frame(width: isPhone ? min(420, UIScreen.main.bounds.width - 24) : 420)
             .frame(maxHeight: .infinity)
             .background(Theme.background.opacity(0.96))
             .foregroundStyle(Theme.text)
