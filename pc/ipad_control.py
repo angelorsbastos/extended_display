@@ -202,7 +202,7 @@ class Controller:
         print("controlling the iPad")
         _tell(True)
 
-    def _leave(self, reason=None):
+    def _leave(self, reason=None, seconds=6):
         """Back to the laptop. Called from a hook or another thread."""
         if not self.active:
             return
@@ -223,7 +223,7 @@ class Controller:
         if self.gestures:
             self.gestures.enabled = False
         if reason:
-            self.hint.show(reason, None, seconds=6)
+            self.hint.show(reason, None, seconds=seconds)
         else:
             self.hint.hide()
         if self.previous_window:
@@ -247,8 +247,13 @@ class Controller:
                 return
         # the iPad lists the laptop under its Windows computer name
         name = os.environ.get("COMPUTERNAME", "this laptop")
-        self._leave(f"The iPad didn't connect. Is Bluetooth on, and “{name}” paired in its "
-                    "Settings > Bluetooth?")
+        print("the iPad didn't connect over Bluetooth")
+        # usually the iPad's saved pairing no longer matches the laptop (often
+        # after the laptop restarts): only a fresh pairing on both sides fixes it
+        self._leave(f"The iPad didn't connect. If its Bluetooth is on, pair again: on the iPad, "
+                    f"Settings > Bluetooth > (i) next to “{name}” > Forget This Device; on the laptop, "
+                    f"Bluetooth & devices > the iPad > Remove device. Then Ctrl+Alt+I and tap “{name}” "
+                    f"on the iPad.", seconds=20)
 
     def _stay_in_front(self):
         """Windows only hands gestures to the app in front; if something else
@@ -464,7 +469,7 @@ class Hint:
         words = tkinter.Frame(row, bg=osd.GRAPHITE)
         words.pack(side="left")
         title = tkinter.Label(words, font=("Segoe UI Variable Display Semib", 12), fg=osd.WHITE,
-                              bg=osd.GRAPHITE, anchor="w")
+                              bg=osd.GRAPHITE, anchor="w", justify="left", wraplength=640)  # long notes wrap
         subtitle = tkinter.Label(words, font=("Segoe UI Variable Text", 10), fg=osd.MUTED, bg=osd.GRAPHITE,
                                  anchor="w")
         title.pack(fill="x")

@@ -89,8 +89,12 @@ final class ShareViewController: UIViewController {
                     return
                 }
                 // the file is only there during this call: copy it now
-                let name = provider.suggestedName.map { $0 + (url.pathExtension.isEmpty ? "" : "." + url.pathExtension) }
-                    ?? url.lastPathComponent
+                // suggestedName sometimes has the extension already ("Screenshot.png")
+                let name = provider.suggestedName.map { suggested -> String in
+                    let ext = url.pathExtension
+                    return ext.isEmpty || suggested.lowercased().hasSuffix("." + ext.lowercased())
+                        ? suggested : suggested + "." + ext
+                } ?? url.lastPathComponent
                 let target = folder.appendingPathComponent(name)
                 do {
                     try FileManager.default.copyItem(at: url, to: target)

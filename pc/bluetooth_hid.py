@@ -336,7 +336,8 @@ class BluetoothHID:
                 if latest is not None:
                     self.touch_sent_at = time.time()
                     await self._notify(self.touch, self._touch_report(*latest))
-                    self.touch_frames += 1
+                    if self.touch is not None and self.touch.subscribed_clients.size:
+                        self.touch_frames += 1  # only frames an iPad was there to get
             with self.lock:
                 p = self.pending
                 if not (p["dx"] or p["dy"] or p["wheel"] or p["pan"] or p["buttons"] != self.buttons_sent):

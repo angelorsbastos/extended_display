@@ -3,17 +3,15 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-/// Wingman's widgets, its timer Live Activity and its Control Center buttons.
-/// They show what the app last saw (WidgetSnapshot) and open the app to act:
-/// only the open app can reach the laptop.
+/// Wingman's widgets and its timer Live Activity. They show what the app last
+/// saved (WidgetSnapshot) and open the app to act: only the open app can reach
+/// the laptop.
 @main
 struct WingmanWidgetBundle: WidgetBundle {
     var body: some Widget {
-        LaptopWidget()
+        LauncherWidget()
         ShortcutsWidget()
         TimerLiveActivity()
-        LockLaptopControl()
-        PlayPauseControl()
     }
 }
 
@@ -28,7 +26,22 @@ private enum Look {
     static let warm = Color(red: 255 / 255, green: 179 / 255, blue: 92 / 255)
 }
 
-// MARK: - The timeline: whatever the app saved last
+// MARK: - The launcher: straight into a part of Wingman
+
+/// The laptop's name, when it was last seen, and buttons straight into
+/// Extend, Mirror, the Dock, the trackpad and keys, and Files. Nothing here
+/// goes stale: Wingman opens on that screen and connects.
+struct LauncherWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "launcher", provider: SnapshotProvider()) { entry in
+            LauncherView(snapshot: entry.snapshot)
+                .containerBackground(Look.background, for: .widget)
+        }
+        .configurationDisplayName("Wingman")
+        .description("Open Extend, Mirror, the Dock, the trackpad or Files in one tap.")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular])
+    }
+}
 
 struct SnapshotEntry: TimelineEntry {
     let date: Date
@@ -37,8 +50,7 @@ struct SnapshotEntry: TimelineEntry {
 
 struct SnapshotProvider: TimelineProvider {
     func placeholder(in context: Context) -> SnapshotEntry {
-        SnapshotEntry(date: .now, snapshot: WidgetSnapshot(laptopName: "Laptop", battery: 80, cpuTemp: 55,
-                                                           songTitle: "Song", songArtist: "Artist"))
+        SnapshotEntry(date: .now, snapshot: WidgetSnapshot(laptopName: "Laptop", battery: 80, updated: .now))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SnapshotEntry) -> Void) {
@@ -51,117 +63,182 @@ struct SnapshotProvider: TimelineProvider {
     }
 }
 
-// MARK: - Laptop: battery, temperature, song
+private struct Destination: Identifiable {
+    let id: String
+    let title: String
+    let icon: String
+    var accent = false
+    var url: URL { URL(string: "wingman://open/\(id)")! }
 
-struct LaptopWidget: Widget {
-    var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "laptop", provider: SnapshotProvider()) { entry in
-            LaptopWidgetView(snapshot: entry.snapshot)
-                .containerBackground(Look.background, for: .widget)
-                .widgetURL(WingmanLink.dock)
-        }
-        .configurationDisplayName("Laptop")
-        .description("Battery, temperature and what's playing, as of the last time Wingman was open.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular])
-    }
+    static let all = [
+        Destination(id: "extend", title: "Extend", icon: "rectangle.on.rectangle.angled", accent: true),
+        Destination(id: "mirror", title: "Mirror", icon: "rectangle.on.rectangle"),
+        Destination(id: "dock", title: "Dock", icon: "clock"),
+        Destination(id: "trackpad", title: "Trackpad", icon: "keyboard"),
+        Destination(id: "files", title: "Files", icon: "folder"),
+    ]
 }
 
-struct LaptopWidgetView: View {
+struct LauncherView: View {
     let snapshot: WidgetSnapshot?
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        if let snapshot {
-            switch family {
-            case .accessoryCircular:
-                Gauge(value: Double(snapshot.battery ?? 0), in: 0...100) {
-                    Image(systemName: "laptopcomputer")
-                } currentValueLabel: {
-                    Text(snapshot.battery.map { "\($0)" } ?? "–")
+        switch family {
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 1) {
+                Label(snapshot?.laptopName ?? "Wingman", systemImage: "laptopcomputer").font(.headline).lineLimit(1)
+                if let snapshot, let battery = snapshot.battery, snapshot.updated > .distantPast {
+                    // the last known battery, with when it was: honest about being old
+                    Text("\(battery)% at \(snapshot.updated, style: .time)")
                 }
-                .gaugeStyle(.accessoryCircularCapacity)
-            case .accessoryRectangular:
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(snapshot.laptopName ?? "Laptop").font(.headline).lineLimit(1)
-                    Text(batteryText(snapshot) + (snapshot.cpuTemp.map { " · \($0)°" } ?? ""))
-                    if let song = snapshot.songTitle { Text(song).lineLimit(1) }
+                Text("Tap to open").foregroundStyle(.secondary)
+            }
+            .widgetURL(WingmanLink.dock)
+        case .accessoryCircular:
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "laptopcomputer").font(.title3)
+            }
+            .widgetURL(Destination.all[0].url)
+        case .systemSmall:
+            VStack(alignment: .leading, spacing: 8) {
+                header
+                Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                    GridRow { button(Destination.all[0], compact: true); button(Destination.all[1], compact: true) }
+                    GridRow { button(Destination.all[2], compact: true); button(Destination.all[3], compact: true) }
                 }
-            default:
-                full(snapshot)
             }
-        } else {
-            VStack(spacing: 6) {
-                Image(systemName: "laptopcomputer").font(.title2)
-                Text("Open Wingman once").font(.caption)
-                // diagnostics, while the widgets don't fill in yet
-                Text(WidgetSnapshot.diagnosis).font(.system(size: 8)).multilineTextAlignment(.center)
+        default:
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                HStack(spacing: 8) {
+                    ForEach(Destination.all) { button($0, compact: false) }
+                }
             }
-            .foregroundStyle(Look.secondary)
         }
     }
 
-    private func full(_ snapshot: WidgetSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Circle().fill(snapshot.connected ? Color.green : Look.secondary).frame(width: 7, height: 7)
-                Text(snapshot.laptopName ?? "Laptop").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "laptopcomputer").font(.system(size: 13, weight: .semibold))
+            Text(snapshot?.laptopName ?? "Wingman").font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            Spacer(minLength: 4)
+            if let snapshot, snapshot.updated > .distantPast {
+                Text(snapshot.updated, style: .relative)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Look.secondary)
+                    .lineLimit(1)
+                    .multilineTextAlignment(.trailing)
             }
-            .foregroundStyle(Look.text)
-            HStack(spacing: 14) {
-                Label(batteryText(snapshot), systemImage: snapshot.charging ? "battery.100.bolt" : "battery.75")
-                if let temp = snapshot.cpuTemp {
-                    Label("\(temp)°", systemImage: "thermometer.medium")
-                        .foregroundStyle(temp >= 85 ? Look.warm : Look.text)
-                }
-            }
-            .font(.system(size: family == .systemSmall ? 15 : 17, weight: .semibold))
-            .foregroundStyle(Look.text)
-            Spacer(minLength: 0)
-            if let song = snapshot.songTitle {
-                VStack(alignment: .leading, spacing: 1) {
-                    Label(song, systemImage: snapshot.playing ? "music.note" : "pause.fill")
-                        .font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    if let artist = snapshot.songArtist, !artist.isEmpty {
-                        Text(artist).font(.system(size: 12)).foregroundStyle(Look.secondary).lineLimit(1)
-                    }
-                }
-                .foregroundStyle(Look.text)
-            }
-            Text(snapshot.updated, style: .relative)
-                .font(.system(size: 11))
-                .foregroundStyle(Look.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(Look.text)
     }
 
-    private func batteryText(_ snapshot: WidgetSnapshot) -> String {
-        snapshot.battery.map { "\($0)%" } ?? "–"
+    private func button(_ destination: Destination, compact: Bool) -> some View {
+        Link(destination: destination.url) {
+            VStack(spacing: 5) {
+                Image(systemName: destination.icon)
+                    .font(.system(size: compact ? 20 : 22, weight: .semibold))
+                if !compact {
+                    Text(destination.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .foregroundStyle(destination.accent ? Color.white : Look.text)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(destination.accent ? Look.accent : Look.tile))
+        }
+        .accessibilityLabel(destination.title)
     }
 }
 
-// MARK: - Shortcuts: one tap opens Wingman and runs it
+// MARK: - Shortcuts: pick them, one tap runs them
+
+/// A shortcut as the widget's settings offer it (Edit Widget > Shortcuts).
+struct ShortcutEntity: AppEntity {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Shortcut"
+    static var defaultQuery = ShortcutQuery()
+
+    let id: String
+    let title: String
+
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(title)") }
+}
+
+struct ShortcutQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [ShortcutEntity] {
+        all().filter { identifiers.contains($0.id) }
+    }
+
+    func suggestedEntities() async throws -> [ShortcutEntity] {
+        all()
+    }
+
+    private func all() -> [ShortcutEntity] {
+        (WidgetSnapshot.load()?.shortcuts ?? []).map { ShortcutEntity(id: $0.id, title: $0.title) }
+    }
+}
+
+struct ChooseShortcuts: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "Choose shortcuts"
+    static var description = IntentDescription("Pick the shortcuts this widget shows. Empty: your first ones.")
+
+    @Parameter(title: "Shortcuts", size: [.systemSmall: 4, .systemMedium: 4, .systemLarge: 8])
+    var shortcuts: [ShortcutEntity]?
+}
+
+struct ShortcutsEntry: TimelineEntry {
+    let date: Date
+    let items: [WidgetSnapshot.Item]
+}
+
+struct ShortcutsProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> ShortcutsEntry {
+        ShortcutsEntry(date: .now, items: [])
+    }
+
+    func snapshot(for configuration: ChooseShortcuts, in context: Context) async -> ShortcutsEntry {
+        ShortcutsEntry(date: .now, items: items(configuration, family: context.family))
+    }
+
+    func timeline(for configuration: ChooseShortcuts, in context: Context) async -> Timeline<ShortcutsEntry> {
+        Timeline(entries: [ShortcutsEntry(date: .now, items: items(configuration, family: context.family))],
+                 policy: .never)
+    }
+
+    /// The chosen shortcuts in the chosen order, or the first ones if none were chosen.
+    private func items(_ configuration: ChooseShortcuts, family: WidgetFamily) -> [WidgetSnapshot.Item] {
+        let all = WidgetSnapshot.load()?.shortcuts ?? []
+        let count = family == .systemLarge ? 8 : 4
+        let chosen = (configuration.shortcuts ?? []).compactMap { pick in all.first { $0.id == pick.id } }
+        return Array((chosen.isEmpty ? all : chosen).prefix(count))
+    }
+}
 
 struct ShortcutsWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "shortcuts", provider: SnapshotProvider()) { entry in
-            ShortcutsWidgetView(snapshot: entry.snapshot)
+        AppIntentConfiguration(kind: "shortcuts", intent: ChooseShortcuts.self, provider: ShortcutsProvider()) { entry in
+            ShortcutsView(items: entry.items)
                 .containerBackground(Look.background, for: .widget)
         }
         .configurationDisplayName("Shortcuts")
-        .description("Your Wingman shortcuts. A tap opens Wingman and runs it on the laptop.")
+        .description("Your Wingman shortcuts. Edit the widget to choose them; a tap runs one on the laptop.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
-struct ShortcutsWidgetView: View {
-    let snapshot: WidgetSnapshot?
+struct ShortcutsView: View {
+    let items: [WidgetSnapshot.Item]
     @Environment(\.widgetFamily) private var family
 
+    /// Small: 2 x 2. Medium: one row of 4. Large: 2 rows of 4, big tiles.
     private var columns: Int { family == .systemSmall ? 2 : 4 }
-    private var count: Int { family == .systemSmall ? 4 : family == .systemMedium ? 4 : 8 }
 
     var body: some View {
-        let items = Array((snapshot?.shortcuts ?? []).prefix(count))
         if items.isEmpty {
             VStack(spacing: 6) {
                 Image(systemName: "square.grid.2x2").font(.title2)
@@ -169,21 +246,47 @@ struct ShortcutsWidgetView: View {
             }
             .foregroundStyle(Look.secondary)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 8) {
-                ForEach(items) { item in
-                    Link(destination: WingmanLink.shortcut(item.id)) {
-                        VStack(spacing: 4) {
-                            icon(item)
-                                .frame(width: 26, height: 26)
-                            if family != .systemSmall {
-                                Text(item.title).font(.system(size: 10)).foregroundStyle(Look.secondary).lineLimit(1)
-                            }
+            let rows = stride(from: 0, to: items.count, by: columns).map { Array(items[$0..<min($0 + columns, items.count)]) }
+            VStack(spacing: 8) {
+                ForEach(rows.indices, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        ForEach(rows[row]) { tile($0) }
+                        // keep tile sizes even when a row isn't full
+                        ForEach(0..<(columns - rows[row].count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .frame(maxWidth: .infinity, minHeight: family == .systemSmall ? 52 : 58)
-                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Look.tile))
                     }
                 }
             }
+        }
+    }
+
+    private func tile(_ item: WidgetSnapshot.Item) -> some View {
+        let small = family == .systemSmall
+        return Link(destination: WingmanLink.shortcut(item.id)) {
+            VStack(spacing: small ? 0 : 6) {
+                icon(item)
+                    .frame(width: iconSize, height: iconSize)
+                if !small {
+                    Text(item.title)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Look.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                }
+            }
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Look.tile))
+        }
+        .accessibilityLabel(item.title)
+    }
+
+    private var iconSize: CGFloat {
+        switch family {
+        case .systemLarge: return 44
+        case .systemMedium: return 36
+        default: return 40
         }
     }
 
@@ -191,7 +294,11 @@ struct ShortcutsWidgetView: View {
         if let base64 = item.image, let data = Data(base64Encoded: base64), let image = UIImage(data: data) {
             Image(uiImage: image).resizable().scaledToFit()
         } else {
-            Image(systemName: item.symbol).font(.system(size: 18, weight: .semibold)).foregroundStyle(Look.text)
+            Image(systemName: item.symbol)
+                .resizable()
+                .scaledToFit()
+                .padding(iconSize * 0.12)
+                .foregroundStyle(Look.text)
         }
     }
 }
@@ -271,31 +378,5 @@ struct TimerLiveActivity: Widget {
         let s = Int(seconds.rounded(.up))
         return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
             : String(format: "%d:%02d", s / 60, s % 60)
-    }
-}
-
-// MARK: - Control Center buttons
-
-struct LockLaptopControl: ControlWidget {
-    var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.extenddisplay.app.lock") {
-            ControlWidgetButton(action: OpenURLIntent(WingmanLink.lock)) {
-                Label("Lock laptop", systemImage: "lock.laptopcomputer")
-            }
-        }
-        .displayName("Lock laptop")
-        .description("Opens Wingman and locks the laptop.")
-    }
-}
-
-struct PlayPauseControl: ControlWidget {
-    var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.extenddisplay.app.playpause") {
-            ControlWidgetButton(action: OpenURLIntent(WingmanLink.playPause)) {
-                Label("Laptop play/pause", systemImage: "playpause.fill")
-            }
-        }
-        .displayName("Laptop play/pause")
-        .description("Opens Wingman and plays or pauses the laptop's music.")
     }
 }

@@ -1,4 +1,4 @@
-"""Read and write the Windows clipboard: text and images (images as PNG bytes)."""
+"""Read and write the Windows clipboard: text, images (as PNG bytes) and files."""
 import ctypes
 import io
 from ctypes import wintypes
@@ -7,7 +7,7 @@ from PIL import Image, ImageGrab
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
-CF_UNICODETEXT, CF_DIB = 13, 8
+CF_UNICODETEXT, CF_DIB, CF_HDROP = 13, 8, 15
 GMEM_MOVEABLE = 0x2
 MAX_IMAGE_BYTES = 8 * 1024 * 1024  # don't push huge screenshots over the cable
 
@@ -52,16 +52,26 @@ def read():
         user32.CloseClipboard()
 
 
+user32.RegisterClipboardFormatW.argtypes = [wintypes.LPCWSTR]
+user32.RegisterClipboardFormatW.restype = wintypes.UINT
+
+
 def _set(fmt, data):
+    _set_many([(fmt, data)])
+
+
+def _set_many(items):
+    """Put several formats of the same thing on the clipboard at once."""
     if not user32.OpenClipboard(None):
         raise OSError("clipboard busy")
     try:
         user32.EmptyClipboard()
-        mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
-        ptr = kernel32.GlobalLock(mem)
-        ctypes.memmove(ptr, data, len(data))
-        kernel32.GlobalUnlock(mem)
-        user32.SetClipboardData(fmt, mem)  # the clipboard owns `mem` from now on
+        for fmt, data in items:
+            mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+            ptr = kernel32.GlobalLock(mem)
+            ctypes.memmove(ptr, data, len(data))
+            kernel32.GlobalUnlock(mem)
+            user32.SetClipboardData(fmt, mem)  # the clipboard owns `mem` from now on
     finally:
         user32.CloseClipboard()
 
@@ -75,3 +85,24 @@ def write_image(png):
     out = io.BytesIO()
     image.save(out, "BMP")
     _set(CF_DIB, out.getvalue()[14:])  # a DIB is a .bmp file without its 14-byte header
+
+
+def write_files(paths):
+    """Files on the clipboard, as if copied in Explorer: Ctrl+V in a folder
+    pastes copies of them. A single picture also goes on as an image, so it
+    pastes into chats and documents too."""
+    import struct
+    names = "".join(str(p) + "\0" for p in paths) + "\0"
+    # DROPFILES: offset of the names, a point, "not in the non-client area", wide names
+    hdrop = struct.pack("<IiiII", 20, 0, 0, 0, 1) + names.encode("utf-16-le")
+    copy = struct.pack("<I", 1)  # Preferred DropEffect = copy, not move
+    items = [(CF_HDROP, hdrop), (user32.RegisterClipboardFormatW("Preferred DropEffect"), copy)]
+    if len(paths) == 1:
+        try:
+            image = Image.open(paths[0]).convert("RGB")
+            out = io.BytesIO()
+            image.save(out, "BMP")
+            items.append((CF_DIB, out.getvalue()[14:]))
+        except Exception:  # not a picture (or one Pillow can't read): the file alone
+            pass
+    _set_many(items)

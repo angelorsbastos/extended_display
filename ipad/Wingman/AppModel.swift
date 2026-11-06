@@ -114,6 +114,22 @@ final class AppModel: ObservableObject {
     private var started = false
     private var portrait = false
     private var lastKeyframeRequest = Date.distantPast
+    /// Files from the laptop that arrived together (within a few seconds), all on the clipboard.
+    private var receivedBatch: [URL] = []
+    private var receivedBatchAt = Date.distantPast
+
+    /// A file from the laptop goes on the clipboard too, ready to paste
+    /// (pictures paste as pictures). Not sent back to the laptop.
+    func copyReceived(_ url: URL) {
+        if Date().timeIntervalSince(receivedBatchAt) > 5 { receivedBatch = [] }
+        receivedBatch.append(url)
+        receivedBatchAt = Date()
+        let providers = receivedBatch.compactMap { NSItemProvider(contentsOf: $0) }
+        guard !providers.isEmpty else { return }
+        UIPasteboard.general.itemProviders = providers
+        pasteboardSeen = UIPasteboard.general.changeCount  // ours: don't send it back
+    }
+
     /// UIPasteboard.changeCount when we last synced, to spot new copies.
     private var pasteboardSeen = UIPasteboard.general.changeCount
 
@@ -134,6 +150,7 @@ final class AppModel: ObservableObject {
         audio.onProblem = { [weak self] text in self?.log(text) }
         dockTimer.onFinish = { [weak self] in self?.server.send(json: ["type": "timer_done"]) }
         files.attach(server)
+        files.onReceived = { [weak self] url in self?.copyReceived(url) }
         server.onFileData = { [weak self] payload in self?.files.receive(payload) }
 
         server.onConnected = { [weak self] transport in
@@ -189,6 +206,7 @@ final class AppModel: ObservableObject {
                 guard let self else { return }
                 self.connected = false
                 self.transport = nil
+                self.saveWidgetSnapshot()  // "last seen" from now on
                 // dropped while Connect is on: it reconnects by itself, show that
                 self.connectStage = nil
                 if self.wantsConnection { self.startLooking() }
@@ -252,7 +270,7 @@ final class AppModel: ObservableObject {
     /// What a widget or Control Center button asked for (wingman://...), done
     /// once the laptop is connected and has sent its shortcuts.
     private enum PendingLink {
-        case shortcut(String), control(String), media(String)
+        case shortcut(String), control(String), media(String), screen(Screen)
     }
     private var pendingLink: PendingLink?
     private var lastSnapshot: WidgetSnapshot?
@@ -269,6 +287,22 @@ final class AppModel: ObservableObject {
             pendingLink = .media("play_pause")
         case "dock":
             open(.dock)
+            return
+        case "open":  // the launcher widget: wingman://open/extend, mirror, dock, trackpad, files
+            switch url.lastPathComponent {
+            case "dock": open(.dock); return
+            case "files": open(.files); return
+            case "extend": pendingLink = .screen(.video(.extend))
+            case "mirror": pendingLink = .screen(.video(.mirror))
+            case "trackpad": pendingLink = .screen(.trackpad)
+            default: return
+            }
+            if connected {
+                performPendingLink()
+            } else {
+                screen = .home  // the Connect card shows how it's going
+                if !wantsConnection { connect() }
+            }
             return
         case "send":  // the share extension saved something for the laptop
             collectOutbox()
@@ -294,6 +328,8 @@ final class AppModel: ObservableObject {
             control(name)
         case .media(let action):
             media(action)
+        case .screen(let screen):
+            open(screen)
         }
     }
 
@@ -329,11 +365,12 @@ final class AppModel: ObservableObject {
             charging: controls?.battery?.charging ?? lastSnapshot?.charging ?? false,
             cpuTemp: controls?.cpuTemp ?? lastSnapshot?.cpuTemp,
             songTitle: nowPlaying?.title, songArtist: nowPlaying?.artist, playing: nowPlaying?.playing ?? false,
-            shortcuts: shortcuts.prefix(8).map {
+            shortcuts: shortcuts.map {
                 WidgetSnapshot.Item(id: $0.id, title: $0.title, symbol: $0.icon,
                                     image: ($0.image?.isEmpty ?? true) ? nil : $0.image)
             },
-            updated: Date())
+            // when the laptop was last seen: now if connected, else when it was
+            updated: connected ? Date() : (lastSnapshot ?? WidgetSnapshot.load())?.updated ?? .distantPast)
         let changed = !snapshot.sameContent(as: lastSnapshot)
         lastSnapshot = snapshot
         snapshot.save()  // the "updated" time, at least

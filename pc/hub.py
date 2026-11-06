@@ -285,6 +285,16 @@ class ClipboardSync:
                 return
             print(f"clipboard -> iPad ({kind})")
 
+    def files_received(self, paths):
+        """Files the device sent: on the clipboard too, ready to paste."""
+        try:
+            clipboard.write_files(paths)
+        except OSError as e:
+            print(f"clipboard: couldn't put the files on it: {e}")
+            return
+        self.ours = clipboard.sequence_number()  # not sent back to the device
+        print(f"clipboard <- iPad ({len(paths)} file{'s' if len(paths) > 1 else ''})")
+
     def from_ipad(self, message):
         try:
             if message.get("kind") == "text":
@@ -479,6 +489,7 @@ def handle(session):
     stats_watch = StatsWatch(session)
     touch = touchscreen()
     receiver = files.Receiver(session)
+    receiver.on_saved = clip.files_received
     sender = files.Sender(session)
 
     def laptop_input_changed(active):  # Ctrl+Alt+I switched, from the laptop or a device

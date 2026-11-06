@@ -70,9 +70,14 @@ class Receiver:
     """Saves files the iPad sends into Downloads. Written as "name.part" and
     renamed when complete, so a half-sent file never looks finished."""
 
+    BATCH_SECONDS = 5  # files arriving this close together go on the clipboard together
+
     def __init__(self, session):
         self.session = session
         self.incoming = {}  # id -> {file, path, size, got}
+        # called with every file saved in the latest batch (the hub puts them on the clipboard)
+        self.on_saved = None
+        self.batch, self.batch_at = [], 0.0
 
     def start(self, message):
         try:
@@ -110,6 +115,12 @@ class Receiver:
         print(f"saved {transfer['path']}")
         osd.show("file", f"Saved {transfer['path'].name} to Downloads")
         self.session.send_json({"type": "file_saved", "id": message["id"], "name": transfer["path"].name})
+        if time.time() - self.batch_at > self.BATCH_SECONDS:
+            self.batch = []
+        self.batch.append(transfer["path"])
+        self.batch_at = time.time()
+        if self.on_saved:
+            self.on_saved(list(self.batch))
 
     def cancel(self, message):
         self._drop(self.incoming.pop(message.get("id"), None))

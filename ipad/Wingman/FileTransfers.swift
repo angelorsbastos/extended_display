@@ -43,6 +43,8 @@ final class FileTransfers: ObservableObject {
 
     @Published private(set) var transfers: [Transfer] = []  // this session's, newest first
     @Published private(set) var received: [ReceivedFile] = []
+    /// A file from the laptop was saved here (AppModel puts it on the clipboard).
+    var onReceived: ((URL) -> Void)?
     /// A short note when something finished (e.g. a file arrived), for a banner.
     @Published var note: String?
 
@@ -257,6 +259,8 @@ final class FileTransfers: ObservableObject {
         }
         server?.send(json: ["type": "file_saved", "id": id, "name": current.final.lastPathComponent])
         finish(current.transfer, .done)
+        let saved = current.final
+        DispatchQueue.main.async { self.onReceived?(saved) }
         show("Received “\(current.final.lastPathComponent)” from the laptop")
         DispatchQueue.main.async { self.refreshReceived() }
     }
